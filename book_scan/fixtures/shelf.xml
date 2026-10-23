@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Fictional Reader's bookshelf: read</title>
+    <link>https://www.goodreads.com/review/list/00000000-fictional-reader?shelf=read</link>
+    <description>Fictional Reader's book reviews and ratings</description>
+    <lastBuildDate>Mon, 31 Aug 2026 12:00:00 -0700</lastBuildDate>
+    <ttl>60</ttl>
+    <item>
+      <guid>tag:goodreads.com,2026:Review/900000001</guid>
+      <pubDate>Sun, 30 Aug 2026 09:00:00 +0000</pubDate>
+      <title>An Early Addition</title>
+      <link>https://www.goodreads.com/review/show/900000001-an-early-addition</link>
+      <book_id>7000001</book_id>
+      <book_image_url>https://images.example.invalid/books/early-addition._SX50_.jpg</book_image_url>
+      <book_small_image_url>https://images.example.invalid/books/early-addition._SX50_.jpg</book_small_image_url>
+      <book_medium_image_url>https://images.example.invalid/books/early-addition._SX98_.jpg</book_medium_image_url>
+      <book_large_image_url>https://images.example.invalid/books/early-addition._SX318_.jpg</book_large_image_url>
+      <book_description><![CDATA[ A story about arriving too early to matter. ]]></book_description>
+      <book_published>2018</book_published>
+      <author_name>Priya Okonkwo</author_name>
+      <isbn></isbn>
+      <user_name>Fictional Reader</user_name>
+      <user_rating>4</user_rating>
+      <user_read_at>Tue, 10 Mar 2026 00:00:00 +0000</user_read_at>
+      <user_date_added>Sun, 30 Aug 2026 00:00:00 +0000</user_date_added>
+      <user_date_created>Sun, 30 Aug 2026 00:00:00 +0000</user_date_created>
+      <user_shelves>read</user_shelves>
+      <user_review></user_review>
+      <average_rating>3.91</average_rating>
+      <description><![CDATA[ <p>An Early Addition by Priya Okonkwo</p> ]]></description>
+    </item>
+    <item>
+      <guid>tag:goodreads.com,2026:Review/900000002</guid>
+      <pubDate>Fri, 21 Aug 2026 09:00:00 +0000</pubDate>
+      <title>A Quiet Decoy</title>
+      <link>https://www.goodreads.com/review/show/900000002-a-quiet-decoy</link>
+      <book_id>7000002</book_id>
+      <book_image_url>https://images.example.invalid/books/quiet-decoy._SX50_.jpg</book_image_url>
+      <book_small_image_url>https://images.example.invalid/books/quiet-decoy._SX50_.jpg</book_small_image_url>
+      <book_medium_image_url>https://images.example.invalid/books/quiet-decoy._SX98_.jpg</book_medium_image_url>
+      <book_large_image_url>https://images.example.invalid/books/quiet-decoy._SX318_.jpg</book_large_image_url>
+      <book_description><![CDATA[ A quiet book that almost fooled the ranking. ]]></book_description>
+      <book_published>2021</book_published>
+      <author_name>Tomas Falkenrath</author_name>
+      <isbn></isbn>
+      <user_name>Fictional Reader</user_name>
+      <user_rating>5</user_rating>
+      <user_read_at>Wed, 15 Apr 2026 00:00:00 +0000</user_read_at>
+      <user_date_added>Fri, 21 Aug 2026 00:00:00 +0000</user_date_added>
+      <user_date_created>Fri, 21 Aug 2026 00:00:00 +0000</user_date_created>
+      <user_shelves>read</user_shelves>
+      <user_review></user_review>
+      <average_rating>4.02</average_rating>
+      <description><![CDATA[ <p>A Quiet Decoy by Tomas Falkenrath</p> ]]></description>
+    </item>
+    <item>
+      <guid>tag:goodreads.com,2026:Review/900000003</guid>
+      <pubDate>Mon, 13 Jul 2026 09:00:00 +0000</pubDate>
+      <title>The Later Read</title>
+      <link>https://www.goodreads.com/review/show/900000003-the-later-read</link>
+      <book_id>7000003</book_id>
+      <book_image_url>https://images.example.invalid/books/later-read._SX50_.jpg</book_image_url>
+      <book_small_image_url>https://images.example.invalid/books/later-read._SX50_.jpg</book_small_image_url>
+      <book_medium_image_url>https://images.example.invalid/books/later-read._SX98_.jpg</book_medium_image_url>
+      <book_large_image_url>https://images.example.invalid/books/later-read._SX318_.jpg</book_large_image_url>
+      <book_description><![CDATA[ The book actually read most recently, added long before that. ]]></book_description>
+      <book_published>2023</book_published>
+      <author_name>Dominic Ashworth</author_name>
+      <isbn></isbn>
+      <user_name>Fictional Reader</user_name>
+      <user_rating>5</user_rating>
+      <!-- MEASURED 2026-08-31 on a real feed: Goodreads writes a single-digit day
+           with NO leading zero ('Sat, 1 Aug 2026 ...'); four of its 49 items were
+           this shape. strptime's %d accepts an unpadded day too, so this item pins
+           the feed's real shape, not a parser choice. It is also the record's
+           WINNING item: added 2026-07-13 (feed position 2, third-most-recent add),
+           read 2026-08-01 (the most recent read date in this fixture), so the
+           re-sort has to both parse this date AND rank it above two items that were
+           added more recently but read longer ago. -->
+      <user_read_at>Sat, 1 Aug 2026 00:00:00 +0000</user_read_at>
+      <user_date_added>Mon, 13 Jul 2026 00:00:00 +0000</user_date_added>
+      <user_date_created>Mon, 13 Jul 2026 00:00:00 +0000</user_date_created>
+      <user_shelves>read</user_shelves>
+      <user_review></user_review>
+      <average_rating>4.31</average_rating>
+      <description><![CDATA[ <p>The Later Read by Dominic Ashworth</p> ]]></description>
+    </item>
+    <item>
+      <guid>tag:goodreads.com,2026:Review/900000004</guid>
+      <pubDate>Wed, 3 Jun 2026 09:00:00 +0000</pubDate>
+      <title>No Cover Cottage</title>
+      <link>https://www.goodreads.com/review/show/900000004-no-cover-cottage</link>
+      <book_id>7000004</book_id>
+      <book_image_url>https://images.example.invalid/books/nocover._SX50_.jpg</book_image_url>
+      <book_small_image_url>https://images.example.invalid/books/nocover._SX50_.jpg</book_small_image_url>
+      <book_medium_image_url>https://images.example.invalid/books/nocover._SX98_.jpg</book_medium_image_url>
+      <!-- No book_large_image_url on this item at all: cheap insurance for a book
+           whose large variant Goodreads never generated. Not observed on the 49 real
+           items measured, but the degrade-to-None path must not be hypothetical. -->
+      <book_description><![CDATA[ A book with no large cover art on file. ]]></book_description>
+      <book_published>2015</book_published>
+      <author_name>Selin Vardanyan</author_name>
+      <isbn></isbn>
+      <user_name>Fictional Reader</user_name>
+      <user_rating>3</user_rating>
+      <user_read_at>Thu, 4 Jun 2026 00:00:00 +0000</user_read_at>
+      <user_date_added>Wed, 3 Jun 2026 00:00:00 +0000</user_date_added>
+      <user_date_created>Wed, 3 Jun 2026 00:00:00 +0000</user_date_created>
+      <user_shelves>read</user_shelves>
+      <user_review></user_review>
+      <average_rating>3.55</average_rating>
+      <description><![CDATA[ <p>No Cover Cottage by Selin Vardanyan</p> ]]></description>
+    </item>
+    <item>
+      <guid>tag:goodreads.com,2026:Review/900000005</guid>
+      <pubDate>Mon, 1 Jun 2026 09:00:00 +0000</pubDate>
+      <title>Blank Read Date Ballad</title>
+      <link>https://www.goodreads.com/review/show/900000005-blank-read-date-ballad</link>
+      <book_id>7000005</book_id>
+      <book_image_url>https://images.example.invalid/books/blank-date._SX50_.jpg</book_image_url>
+      <book_small_image_url>https://images.example.invalid/books/blank-date._SX50_.jpg</book_small_image_url>
+      <book_medium_image_url>https://images.example.invalid/books/blank-date._SX98_.jpg</book_medium_image_url>
+      <book_large_image_url>https://images.example.invalid/books/blank-date._SX318_.jpg</book_large_image_url>
+      <book_description><![CDATA[ A book marked read with no read date on file. ]]></book_description>
+      <book_published>2020</book_published>
+      <author_name>Ingrid Solberg</author_name>
+      <isbn></isbn>
+      <user_name>Fictional Reader</user_name>
+      <user_rating>4</user_rating>
+      <!-- Populated on all 49 real items measured, but a book marked read with no
+           read date would otherwise sort as though never read at all. This is the
+           fallback-to-user_date_added insurance, not a live case. -->
+      <user_read_at></user_read_at>
+      <user_date_added>Mon, 1 Jun 2026 00:00:00 +0000</user_date_added>
+      <user_date_created>Mon, 1 Jun 2026 00:00:00 +0000</user_date_created>
+      <user_shelves>read</user_shelves>
+      <user_review></user_review>
+      <average_rating>3.77</average_rating>
+      <description><![CDATA[ <p>Blank Read Date Ballad by Ingrid Solberg</p> ]]></description>
+    </item>
+    <item>
+      <guid>tag:goodreads.com,2026:Review/900000006</guid>
+      <pubDate>Tue, 12 May 2026 09:00:00 +0000</pubDate>
+      <title>Unrated Wanderings</title>
+      <link>https://www.goodreads.com/review/show/900000006-unrated-wanderings</link>
+      <book_id>7000006</book_id>
+      <book_image_url>https://images.example.invalid/books/unrated._SX50_.jpg</book_image_url>
+      <book_small_image_url>https://images.example.invalid/books/unrated._SX50_.jpg</book_small_image_url>
+      <book_medium_image_url>https://images.example.invalid/books/unrated._SX98_.jpg</book_medium_image_url>
+      <book_large_image_url>https://images.example.invalid/books/unrated._SX318_.jpg</book_large_image_url>
+      <book_description><![CDATA[ A book logged without a star rating. ]]></book_description>
+      <book_published>2012</book_published>
+      <author_name>Casimir Boyd</author_name>
+      <isbn></isbn>
+      <user_name>Fictional Reader</user_name>
+      <!-- Goodreads writes "0" for an unrated book, not an empty tag or a missing
+           one; this must become None, never a zero-star card. -->
+      <user_rating>0</user_rating>
+      <user_read_at>Sun, 17 May 2026 00:00:00 +0000</user_read_at>
+      <user_date_added>Tue, 12 May 2026 00:00:00 +0000</user_date_added>
+      <user_date_created>Tue, 12 May 2026 00:00:00 +0000</user_date_created>
+      <user_shelves>read</user_shelves>
+      <user_review></user_review>
+      <average_rating>3.60</average_rating>
+      <description><![CDATA[ <p>Unrated Wanderings by Casimir Boyd</p> ]]></description>
+    </item>
+  </channel>
+</rss>

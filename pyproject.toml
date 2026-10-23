@@ -1,0 +1,165 @@
+[project]
+name = "media-feeds"
+version = "0.1.0"
+description = "Feed adapters: public media RSS and a local music library in, the committed JSON records a site renders out"
+readme = "README.md"
+license = "AGPL-3.0-or-later"
+requires-python = ">=3.12"
+# One runtime package, for one tool: album_scan's folder source reads each track's ID3
+# tags with mutagen, pinned to one exact release. The license was read from the package
+# metadata when pinned: mutagen GPL-2.0-or-later. A license can change between versions,
+# so re-read it on every bump. Everything else is standard-library only -- feed_read
+# reads RSS with xml.etree and email.utils rather than taking a dependency.
+dependencies = ["mutagen==1.48.1"]
+
+[project.optional-dependencies]
+# album_scan's Music.app sources (--source music and auto) need the apple-music-toolbox,
+# which is not a package: clone apple-music-toolbox beside this repository, or point
+# --toolbox or APPLE_MUSIC_TOOLBOX at a clone. This extra installs nothing; it is
+# declared so the requirement has a name a reader can find, and README.md says how to
+# meet it.
+apple-music = []
+# Everything the suites need. hypothesis drives the property tests and nothing at runtime
+# imports it. mutagen is repeated here, exactly, because the folder-source suites write
+# ID3 tags with it, and a check that installs this extra's requirement strings on their
+# own, before the project itself, would otherwise run them without it.
+test = ["hypothesis==6.165.10", "mutagen==1.48.1"]
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# E4/E7/E9/F are ruff's classic default set, written out so the enabled rules are a
+# function of this file rather than of whichever ruff release is installed. PGH003/PGH004
+# require every suppression to carry a rule code. D adds the docstring rules (pep257),
+# minus D401's imperative-mood opinion, which rewords valid noun-phrase summaries.
+select = ["E4", "E7", "E9", "F", "PGH003", "PGH004", "D"]
+ignore = ["D401"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.ruff.lint.per-file-ignores]
+# Test method names self-document; a docstring per test would be noise.
+"**/test_*.py" = ["D"]
+
+[tool.mypy]
+python_version = "3.12"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+# Each CLI, and feed_read for bounded_fetch, puts these folders on sys.path at runtime,
+# from the repository root (stdio_utf8/stdio_utf8.md, "How this project's tools import
+# it"). mypy cannot see a runtime insert, so they are named here for it.
+mypy_path = [
+  "$MYPY_CONFIG_FILE_DIR/stdio_utf8",
+  "$MYPY_CONFIG_FILE_DIR/help_formatter",
+  "$MYPY_CONFIG_FILE_DIR/bounded_fetch",
+  "$MYPY_CONFIG_FILE_DIR/feed_read",
+  "$MYPY_CONFIG_FILE_DIR/wikidata_director",
+  # album_scan reaches cover_art as a sibling, and cover_art.py puts its private src/ on
+  # sys.path at runtime, so `import artwork_match` needs its own entry.
+  "$MYPY_CONFIG_FILE_DIR/cover_art",
+  "$MYPY_CONFIG_FILE_DIR/cover_art/src",
+  "$MYPY_CONFIG_FILE_DIR/library_walk",
+  # cover_art's cold-cache test runs its child through bounded_run, and bounded_run.py
+  # puts its private src/ on sys.path at load time, which mypy cannot see either.
+  "$MYPY_CONFIG_FILE_DIR/bounded_run",
+  "$MYPY_CONFIG_FILE_DIR/bounded_run/src",
+  "$MYPY_CONFIG_FILE_DIR/live_pid_guard",
+]
+
+# --- Gate configuration: the lint, test, scan and doc checks this tree is held to. ---
+
+[tool.pii_scan]
+# The license notice names the copyright holder, which is what it is for.
+exclude = ["LICENSE"]
+
+[tool.python_gate]
+# bounded_run ships the grandchild fixture its live boundary test launches, and which a
+# human can run by hand to watch the bound hold. It is an INPUT the test drives, not a
+# module of the tool -- and it deliberately never exits, so it could not be imported by
+# a paired test even in principle.
+exclude = ["bounded_run/samples"]
+
+[tool.samples_presence]
+# Libraries with no CLI: nothing in them runs by hand against a sample input. feed_read's
+# record write is driven by each adapter's CLI, whose samples/ pair covers it. cover_art's
+# "output" is an ArtworkMatch (a URL and a year), never a file. library_walk returns a
+# list of folders, and live_pid_guard is test support. bounded_run is deliberately NOT
+# here: it does ship a samples/ pair.
+exempt = [
+  "feed_read",
+  "cover_art",
+  "stdio_utf8",
+  "help_formatter",
+  "bounded_fetch",
+  "library_walk",
+  "live_pid_guard",
+]
+
+[tool.stdio_policy]
+# The whole tree, libraries included: a library is exactly where a stray print() does
+# not belong.
+paths = ["."]
+
+[tool.claim_check.allow_absent]
+# Each adapter's --output default is relative to the working directory, which is the
+# site's root: the record it names lives in the site's tree, so it is absent from this
+# repository by design. allow_absent rather than an ignore keeps a respelling failing.
+"film_scan/film_scan.md" = ["src/data/films.json"]
+"book_scan/book_scan.md" = ["src/data/books.json"]
+"README.md" = ["src/data/films.json", "src/data/books.json"]
+
+[tool.claim_check.ignore_paths]
+# "Artist/Album/" names the library LAYOUT album_scan reads -- the same shape its own
+# --help text uses -- not a literal path anywhere in this tree.
+"album_scan" = ["Artist/Album/"]
+
+[tool.fuzz_gate]
+# NO corpus_dir, deliberately: wikidata_director and cover_art each carry a
+# `# fuzz-target`, and one declared folder cannot hold both corpora -- gating either folder
+# would report the other's seeds as orphans. Each tool folder takes the default,
+# "fuzz_corpus" beside it, and owns its corpus outright.
+
+[tool.dep_audit]
+# Pinning checks only in the inner loop; the network CVE audit is run on demand.
+offline = "skip"
+
+[tool.gate_cache]
+# The variables whose value changes which tests run, so a verdict recorded with one
+# setting is never replayed into a run with another. Each *_OFFLINE switch skips its
+# tool's live test, and each identity variable skips it when absent. BOOK_SCAN_KEY is
+# read only by book_scan's CLI fallback, which every test isolates; it is listed so the
+# list stays exactly the project's reads. APPLE_MUSIC_TOOLBOX names the toolbox
+# album_scan imports for a Music.app source, and whether one is found decides whether
+# the cases driving it run or skip.
+# feed_read/tests/test_feed_read_env_declared.py fails when this list and the project's
+# environment reads, by literal or module-level constant, differ.
+env = [
+  "ALBUM_SCAN_OFFLINE",
+  "APPLE_MUSIC_TOOLBOX",
+  "BOOK_SCAN_KEY",
+  "BOOK_SCAN_OFFLINE",
+  "BOOK_SCAN_USER_ID",
+  "COVER_ART_OFFLINE",
+  "FILM_SCAN_OFFLINE",
+  "FILM_SCAN_USERNAME",
+  "WIKIDATA_DIRECTOR_OFFLINE",
+]
+
+[tool.prose_terms]
+# Words this project's prose must not use, so they cannot creep back in. A measurement's
+# provenance stands without naming whose data it was ("measured on a real feed"), and
+# whoever runs a tool is "the operator". Pointers to documents that do not ship with the
+# project resolve for no reader -- state the rule instead. Each entry waives itself: the
+# declaration is not prose.
+terms = [
+  # prose: ignore[owner] the declaration itself
+  "owner",
+  # prose: ignore[spec] the declaration itself
+  "spec",
+  # prose: ignore[AGENTS] the declaration itself
+  "AGENTS",
+  # prose: ignore[R13] the declaration itself
+  "R13",
+]

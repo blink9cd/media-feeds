@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"
+     xmlns:letterboxd="https://letterboxd.com"
+     xmlns:tmdb="https://themoviedb.org"
+     xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Letterboxd - Example Viewer</title>
+    <link>https://letterboxd.com/example-viewer/</link>
+    <description>Films watched by Example Viewer</description>
+    <item>
+      <title>The Invented Voyage, 2024 - ★★★★</title>
+      <link>https://letterboxd.com/example-viewer/film/the-invented-voyage/</link>
+      <guid>letterboxd-watch-00000001</guid>
+      <pubDate>Mon, 31 Aug 2026 09:00:00 +1200</pubDate>
+      <letterboxd:watchedDate>2026-08-30</letterboxd:watchedDate>
+      <letterboxd:rewatch>No</letterboxd:rewatch>
+      <letterboxd:filmTitle>The Invented Voyage</letterboxd:filmTitle>
+      <letterboxd:filmYear>2024</letterboxd:filmYear>
+      <letterboxd:memberRating>4.0</letterboxd:memberRating>
+      <letterboxd:memberLike>Yes</letterboxd:memberLike>
+      <tmdb:movieId>1</tmdb:movieId>
+      <description><![CDATA[ <p><img src="https://example.invalid/poster/voyage-0-600-0-900-crop.jpg"/></p> <p>Watched on Sunday August 30, 2026.</p> ]]></description>
+      <dc:creator>Example Viewer</dc:creator>
+    </item>
+    <item>
+      <title>A Made-Up List of Films</title>
+      <link>https://letterboxd.com/example-viewer/list/a-made-up-list-of-films/</link>
+      <guid>letterboxd-list-00000002</guid>
+      <pubDate>Sun, 30 Aug 2026 09:00:00 +1200</pubDate>
+      <description><![CDATA[ <p>A list, not a film. It has no film elements at all.</p> ]]></description>
+      <dc:creator>Example Viewer</dc:creator>
+    </item>
+    <item>
+      <title>Unrated Fiction, 2019</title>
+      <link>https://letterboxd.com/example-viewer/film/unrated-fiction/</link>
+      <guid>letterboxd-watch-00000003</guid>
+      <pubDate>Sat, 29 Aug 2026 09:00:00 +1200</pubDate>
+      <letterboxd:watchedDate>2026-08-28</letterboxd:watchedDate>
+      <letterboxd:rewatch>Yes</letterboxd:rewatch>
+      <letterboxd:filmTitle>Unrated Fiction</letterboxd:filmTitle>
+      <letterboxd:filmYear>2019</letterboxd:filmYear>
+      <letterboxd:memberLike>No</letterboxd:memberLike>
+      <tmdb:movieId>3</tmdb:movieId>
+      <description><![CDATA[ <p><img src="https://example.invalid/upload/unrated-0-600-0-900-crop.jpg"/></p> <p>Watched on Friday August 28, 2026.</p> <p>A review paragraph with <i>emphasis</i> in it.</p> ]]></description>
+      <dc:creator>Example Viewer</dc:creator>
+    </item>
+    <item>
+      <title>Posterless, 1998 - ★★</title>
+      <link>https://letterboxd.com/example-viewer/film/posterless/</link>
+      <guid>letterboxd-watch-00000004</guid>
+      <pubDate>Fri, 28 Aug 2026 09:00:00 +1200</pubDate>
+      <letterboxd:watchedDate>2026-08-27</letterboxd:watchedDate>
+      <letterboxd:rewatch>No</letterboxd:rewatch>
+      <letterboxd:filmTitle>Posterless</letterboxd:filmTitle>
+      <letterboxd:filmYear>1998</letterboxd:filmYear>
+      <letterboxd:memberRating>2.0</letterboxd:memberRating>
+      <letterboxd:memberLike>No</letterboxd:memberLike>
+      <tmdb:movieId>4</tmdb:movieId>
+      <description><![CDATA[ <p>Watched on Thursday August 27, 2026.</p> ]]></description>
+      <dc:creator>Example Viewer</dc:creator>
+    </item>
+  </channel>
+</rss>
