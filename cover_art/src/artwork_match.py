@@ -1,22 +1,22 @@
 """Decide which iTunes search result is actually the album that was asked for.
 
-THE DEFECT THIS EXISTS TO FIX. Requesting `limit=1` and using `results[0]` with no check
-that it is the right album -- however thorough the `except` list is about FAILURES --
-has no check at all for a **successful response about the wrong thing**, so any album
-the store cannot find returns some other album's cover, stated as fact -- *Fictionals
+The defect this exists to fix: requesting `limit=1` and using `results[0]` with no check
+that it is the right album (however thorough the `except` list is about failures)
+has no check at all for a successful response about the wrong thing, so any album
+the store cannot find returns some other album's cover, stated as fact. *Fictionals
 (Gold)* would come back wearing the *Teal Album*'s art.
 
-NAME IS THE PRIMARY SIGNAL; the year and the track count are tiebreakers, never gates.
-The question this answers is "is this the same WORK?" -- a different EDITION of the right
-album is a fine answer, because its art is the same one. Only a different WORK is a
+The name is the primary signal; the year and the track count are tiebreakers, never
+gates. The question this answers is "is this the same work?" A different edition of the
+right album is a fine answer, because its art is the same one. Only a different work is a
 defect. (The one place the two facts do more than break a tie: a same-artist candidate
-whose name does not match is still admitted when BOTH agree; see `pick_album`.)
+whose name does not match is still admitted when both agree; see `pick_album`.)
 
-That ordering was not a preference. Gating on artist AND year AND track count all
-matching was measured against a real library and rejected: it BROKE more matches that
+That ordering was not a preference. Gating on artist and year and track count all
+matching was measured against a real library and rejected: it broke more matches that
 already worked than it corrected. A tag year and a store release year legitimately
 differ across reissues and regions, and a deluxe edition has a different track count,
-so an AND of the three rejects correct answers. A wrong cover traded for more missing
+so an and of the three rejects correct answers. A wrong cover traded for more missing
 ones is a net loss.
 
 This module is pure: it does no I/O and knows nothing about how the candidates were
@@ -34,7 +34,7 @@ import re
 _TRAILING_QUALIFIER = re.compile(r"\s*[\(\[][^\)\]]*[\)\]]\s*$")
 _NON_ALPHANUMERIC = re.compile(r"[^a-z0-9]+")
 
-# Apostrophes are DELETED rather than turned into a space, unlike other punctuation:
+# Apostrophes are deleted rather than turned into a space, unlike other punctuation:
 # "Writer's Block" must reduce to "writers block", not "writer s block", so that a
 # library and a store spelling the possessive differently still meet. Every other mark
 # separates words and so becomes a space.
@@ -62,18 +62,18 @@ def _over_cap(text: str) -> bool:
 
 
 def split_name(text: str) -> tuple[str, str]:
-    """A name as (base, qualifier) -- "Fictionals (Gold)" -> ("fictionals", "gold").
+    """A name as (base, qualifier): "Fictionals (Gold)" -> ("fictionals", "gold").
 
     The qualifier is every trailing parenthesized or bracketed group, joined. It is
-    kept rather than discarded because WHICH side carries one decides whether two
+    kept rather than discarded because which side carries one decides whether two
     names are the same work; see `pick_album`.
 
-    `&` folds to `and` BEFORE punctuation is stripped, not after. Stripping first would
+    `&` folds to `and` before punctuation is stripped, not after. Stripping first would
     erase the ampersand entirely and leave "peter bjorn john", which matches neither
-    spelling the store uses -- measured: stripping first turned a correct match into a
+    spelling the store uses. Measured: stripping first turned a correct match into a
     miss.
 
-    The cost is QUADRATIC in the name's length: the qualifier pattern is searched from
+    The cost is quadratic in the name's length: the qualifier pattern is searched from
     every start position, and an unmatched opening bracket makes each of those
     searches scan to the end of the string. `pick_album` bounds it by refusing any
     name longer than `_MAX_NAME_CHARS` before calling here; a caller feeding this
@@ -102,18 +102,18 @@ def release_year(candidate: dict) -> int | None:
     so a missing or non-string `releaseDate` is a case to survive rather than a case
     that cannot happen. Never raises.
 
-    The ONE place the year is read out of the date, for `pick_album`'s comparison and
+    The one place the year is read out of the date, for `pick_album`'s comparison and
     the I/O half's fallback year alike, so neither the four-character slice nor the
-    digit rule can drift between the two. Comparing the year as TEXT instead let them
+    digit rule can drift between the two. Comparing the year as text instead let them
     disagree: the I/O half read an Arabic-Indic "٢٠١٩" as 2019 while the matcher never
     matched it against "2019".
 
     `str.isdecimal()`, not `str.isdigit()`: the superscript "²" satisfies `isdigit()`
-    but `int()` rejects it, so a `releaseDate` of "²⁰²⁵-01-01" -- remote input, straight
-    out of the search response -- used to pass the guard and raise `ValueError` on the
+    but `int()` rejects it, so a `releaseDate` of "²⁰²⁵-01-01" (remote input, straight
+    out of the search response) used to pass the guard and raise `ValueError` on the
     conversion, from a line outside the try that guards the search, out of a function
     whose whole contract is that it never raises. Passing `isdecimal()` guarantees the
-    conversion cannot raise. Not the stricter `isascii() and isdigit()` either -- an
+    conversion cannot raise. Not the stricter `isascii() and isdigit()` either: an
     Arabic-Indic "٢٠٢٥" is a real year that `int()` reads as 2025, and clamping to
     ASCII would stop the raise by discarding a good answer instead.
     """
@@ -131,17 +131,17 @@ def _same_work(
 ) -> bool:
     """Whether two names denote the same work, not merely the same base title.
 
-    Bases must match. Beyond that, WHICH side carries a qualifier is what decides it,
+    Bases must match. Beyond that, which side carries a qualifier is what decides it,
     and getting this wrong reproduces the original defect:
 
-    - Neither side qualified, or only the CANDIDATE is ("Stand Still" against "Stand Still
-      (Deluxe 10th Anniversary Edition)") -- the same work in a different edition, and
+    - Neither side qualified, or only the candidate is ("Stand Still" against "Stand Still
+      (Deluxe 10th Anniversary Edition)"): the same work in a different edition, and
       its cover art is the one wanted. Accept.
-    - Only the ALBUM is qualified ("Fictionals (Gold)" against the store's plain "Fictionals")
-      -- the store simply does not use the color name. Accept; this is the case the
-      whole fix exists for.
-    - BOTH are qualified and the qualifiers DIFFER ("Fictionals (Gold)" against "Fictionals
-      (Teal Album)") -- two different works that happen to share a base title. REJECT.
+    - Only the album is qualified ("Fictionals (Gold)" against the store's plain
+      "Fictionals"): the store simply does not use the color name. Accept; this is the
+      case the whole fix exists for.
+    - Both are qualified and the qualifiers differ ("Fictionals (Gold)" against "Fictionals
+      (Teal Album)"): two different works that happen to share a base title. Reject.
       Without this arm both reduce to "fictionals", and an album absent from the search
       results silently borrows a sibling album's cover, which is the exact defect
       this module was written to remove.
@@ -153,6 +153,36 @@ def _same_work(
     return qualifier == wanted_qualifier
 
 
+def same_artist_ids(candidates: list[dict], *, artist: str) -> list[int]:
+    """The distinct `artistId`s of candidates credited to `artist`, in pool order.
+
+    These are what the I/O half may look up when no candidate is the album: the
+    store's search index can leave an album out while the artist's own catalog lists
+    it. Only a candidate whose artist name normalizes to the wanted one lends its id
+    (another artist's catalog cannot hold this album), and only a positive JSON
+    integer counts as an id, because the value goes into a URL. A JSON `true` decodes
+    to a `bool`, which is an `int` to `isinstance`, so it is refused by name.
+
+    Names past `_MAX_NAME_CHARS` are refused before normalizing, on either side, for
+    the reason `pick_album` gives.
+    """
+    if _over_cap(artist):
+        return []
+    wanted_artist = normalize(artist)
+    ids: list[int] = []
+    for candidate in candidates:
+        artist_id = candidate.get("artistId")
+        if isinstance(artist_id, bool) or not isinstance(artist_id, int):
+            continue
+        if artist_id <= 0 or artist_id in ids:
+            continue
+        artist_name = str(candidate.get("artistName", ""))
+        if _over_cap(artist_name) or normalize(artist_name) != wanted_artist:
+            continue
+        ids.append(artist_id)
+    return ids
+
+
 def pick_album(
     candidates: list[dict],
     *,
@@ -161,14 +191,14 @@ def pick_album(
     year: int | None,
     tracks: int | None,
 ) -> dict | None:
-    """The candidate that IS the requested album, or `None` when none of them is.
+    """The candidate that is the requested album, or `None` when none of them is.
 
     `year` and `tracks` come from Music.app and are `None` when it could not be asked;
     the weaker name-only test then applies, and the answer may honestly be `None`.
 
-    They must NEVER be sourced from the iTunes fallback year. Ranking an iTunes
-    candidate by a year taken from iTunes is self-confirming -- it would agree with
-    whatever it picked, which is exactly the "any answer is the right answer" behavior
+    They must never be sourced from the iTunes fallback year. Ranking an iTunes
+    candidate by a year taken from iTunes is self-confirming: it would agree with
+    whatever it picked, which is the "any answer is the right answer" behavior
     this module exists to remove.
 
     No name longer than `_MAX_NAME_CHARS` is normalized, on either side: a candidate
@@ -188,7 +218,7 @@ def pick_album(
         name = candidate.get("collectionName")
         if not isinstance(name, str):
             continue
-        # Judged on the STRINGIFIED artist name, because that is exactly the text the
+        # Judged on the stringified artist name, because that is the text the
         # strip would receive: a non-string value renders to a string of its own
         # length, and a long enough one is the same hazard as a long string.
         artist_name = str(candidate.get("artistName", ""))
@@ -201,13 +231,13 @@ def pick_album(
         year_matches = year is not None and release_year(candidate) == year
         tracks_match = tracks is not None and candidate.get("trackCount") == tracks
         # Two doors in, and one veto. A candidate earns consideration by being the
-        # same NAME, or by agreeing on both independent facts at once -- either fact
+        # same name, or by agreeing on both independent facts at once. Either fact
         # alone, without the name, is too weak: a year matches across a whole year's
         # releases and a track count across most albums ever made. The veto: a
         # candidate that shares the base title but that `_same_work` refused is a
-        # SIBLING work ("Fictionals (Teal Album)" for "Fictionals (Black Album)"), and
+        # sibling work ("Fictionals (Teal Album)" for "Fictionals (Black Album)"), and
         # siblings can share a year and a track count too, so the facts must not
-        # re-admit what the name rejected -- that is the borrowed-cover defect again,
+        # re-admit what the name rejected: that is the borrowed-cover defect again,
         # through the second door.
         sibling = base == wanted_base and not name_matches
         if sibling or not (name_matches or (year_matches and tracks_match)):
@@ -215,7 +245,7 @@ def pick_album(
         scored.append(((name_matches, year_matches, tracks_match), candidate))
     if not scored:
         return None
-    # Tuple order IS the precedence: name, then year, then track count. Sorting on the
+    # Tuple order is the precedence: name, then year, then track count. Sorting on the
     # tuple keeps that ranking in one place rather than spread across comparisons.
     scored.sort(key=lambda entry: entry[0], reverse=True)
     return scored[0][1]

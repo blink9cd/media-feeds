@@ -1,6 +1,6 @@
 """`--source {auto,music,folder}` dispatch: which source answers, and when.
 
-One cohesive group -- which source answers, and what each one does with --library --
+One cohesive group (which source answers, and what each one does with --library),
 with its own helpers, which share nothing with test_album_scan_cli.py's. They fake
 both boundary seams, so nothing here reaches Music.app or the store.
 """
@@ -36,19 +36,19 @@ def _music_result(returncode: int, stdout: str) -> subprocess.CompletedProcess[s
 def _explode_run(_args: list[str], _timeout: float) -> subprocess.CompletedProcess[str]:
     """A `run` fake that fails the test if the seam is invoked at all.
 
-    `--source folder` reads every fact from the library itself -- the album list from
-    folder birth times, the counts, year and favorites from the files' own tags -- so
+    `--source folder` reads every fact from the library itself (the album list from
+    folder birth times, the counts, year, and favorites from the files' own tags), so
     no Music.app query may run under it, whether or not `--no-favorites` is passed.
     """
     raise AssertionError("run must not be called with --source folder")
 
 
-# -- --source {folder,music,auto}: the folder scan is the default, Music.app an
+# --source {folder,music,auto}: the folder scan is the default, Music.app an
 # explicit choice (music), and Music.app with the folder scan as its fallback a third
 # (auto). Every case that calls main injects a fake `run` and a `fetch` that raises, so
-# nothing below spawns a real osascript process, touches Music.app or reaches the
+# nothing below spawns a real osascript process, touches Music.app, or reaches the
 # network; the Music.app cases drive the real toolbox's parsing, so they skip where no
-# toolbox is installed beside this project. --
+# toolbox is installed beside this project.
 
 
 class SourceSelectionTest(unittest.TestCase):
@@ -76,7 +76,7 @@ class SourceSelectionTest(unittest.TestCase):
     def test_auto_prefers_music_and_never_touches_an_invalid_library(self) -> None:
         # --library points at a directory that does not exist. If auto fell through
         # to the folder scan anyway, this would exit 2 (NotADirectoryError) instead
-        # of 0 -- so a passing exit 0 here proves the folder scan was never attempted.
+        # of 0, so a passing exit 0 here proves the folder scan was never attempted.
         def run(_args: list[str], _timeout: float) -> subprocess.CompletedProcess[str]:
             return _music_result(
                 0, "2001-03-15T10:00:00\tThe Invented Quartet\tPlaceholder Album\n"
@@ -133,10 +133,10 @@ class SourceSelectionTest(unittest.TestCase):
         self.assertEqual(code, 0)
         record = json.loads(out.read_text(encoding="utf-8"))[0]
         self.assertEqual(record["artist"], "Folder Artist")
-        # A Music.app-to-folder fallback under --source auto must be LOUD, not
-        # silent -- the folder heuristic mis-ranks a real library (album_scan.md,
+        # A Music.app-to-folder fallback under --source auto must be announced, not
+        # silent: the folder heuristic mis-ranks a real library (album_scan.md,
         # "Why the folder scan's date is a heuristic"), so the operator needs to see
-        # the fallback fired, not just infer it from the record's own contents.
+        # the fallback fired rather than infer it from the record's own contents.
         output = buffer.getvalue()
         self.assertIn("falling back", output)
         # The toolbox was still imported, so it is still named.
@@ -164,7 +164,7 @@ class SourceSelectionTest(unittest.TestCase):
         self.assertEqual(code, 0)
         # No toolbox is opened for --source folder, so none is named.
         self.assertIn("(source: folder)\n", buffer.getvalue())
-        # --source folder is an explicit choice, not auto's fallback -- no notice.
+        # --source folder is an explicit choice, not auto's fallback, so no notice.
         self.assertNotIn("falling back", buffer.getvalue())
 
     @needs_toolbox
@@ -226,11 +226,11 @@ class SourceSelectionTest(unittest.TestCase):
 
         recently_added's own suite proves the collapse-then-rank logic in
         isolation, and `test_album_scan_count.py` the folder path's `--count` CLI
-        wiring, but only this test threads `count` through `resolve_albums`'s MUSIC
+        wiring, but only this test threads `count` through `resolve_albums`'s music
         branch. Hard-coding that branch to `newest_albums_from_music(1, run=run)`
         instead of `count` would satisfy every other test in this file, at 100% branch
         coverage, while silently capping every `--source music` run at one album
-        regardless of `--count` -- this is the test that fails on exactly that
+        regardless of `--count`; this is the test that fails on that
         mutation (verified by hand).
         """
         rows = "\n".join(
@@ -291,8 +291,8 @@ class SourceSelectionTest(unittest.TestCase):
     def test_source_music_with_a_refused_argv_is_no_album_not_a_traceback(
         self,
     ) -> None:
-        # The date-added seam raising ValueError -- `subprocess.Popen`'s answer to
-        # an argv element holding a NUL -- must read as "Music.app reported
+        # The date-added seam raising ValueError (`subprocess.Popen`'s answer to
+        # an argv element holding a NUL) must read as "Music.app reported
         # nothing" (exit 1), the same never-raises outcome an OSError or a timeout
         # already gets, rather than escaping `main` as a traceback.
         def run(_args: list[str], _timeout: float) -> subprocess.CompletedProcess[str]:

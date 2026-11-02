@@ -1,12 +1,13 @@
 """Fetch a member's Letterboxd diary and write the site's film record: the CLI entry point.
 
-The parsing -- separating diary entries from list items, picking the poster URL
-out of each item's HTML description, ranking and slicing to the newest `--count`
-films, and resolving each chosen film's director -- lives in the private sibling
-`src/film_parse.py`. This module owns only what a CLI needs: building the feed URL,
-fetching or reading the feed body, calling `film_parse.newest_films`, resizing each
-record's poster to the caller's chosen width and verifying Letterboxd serves it,
-writing the records, and printing a one-line confirmation. Every `film_parse` name
+The parsing (separating diary entries from list items, ranking and slicing to the
+newest `--count` films, and resolving each chosen film's director and poster through
+injected lookups) lives in the private sibling `src/film_parse.py`, and the TMDB
+poster lookup itself in `src/tmdb_poster.py`. This module owns only what a CLI needs:
+building the feed URL, fetching or reading the feed body, choosing the poster lookup
+(TMDB with the token from `FILM_SCAN_TMDB_TOKEN`, or none), calling
+`film_parse.newest_films`, writing the records, reporting how many films were left
+without a poster, and printing a one-line confirmation. Every `film_parse` name
 this file's own code does not otherwise need is re-exported below anyway, because
 `tests/` drives them as `film_scan.<name>`.
 
@@ -22,15 +23,16 @@ import os
 import sys
 import urllib.error
 import urllib.parse
+from collections.abc import Sequence
 from pathlib import Path
 
 # Put the vendored libraries (stdio_utf8, help_formatter, bounded_fetch) and the
 # sibling tool folders (feed_read, wikidata_director) on sys.path from this
 # repository's root, the folder above this file's own. One fixed candidate per name,
-# deliberately: a search up the ancestors would also take any same-named folder ABOVE
+# deliberately: a search up the ancestors would also take any same-named folder above
 # the checkout and put it ahead of the standard library, where a module planted in it
 # would be imported in place of the real one (stdio_utf8/tests/test_bootstrap.py
-# plants exactly that).
+# plants such a folder).
 sys.path += [
     str(Path(__file__).resolve().parents[1] / name)
     for name in (
@@ -54,39 +56,49 @@ from wikidata_director import (
 # like the bootstrap above.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-# Used by this file's own code: DEFAULT_POSTER_WIDTH and POSTER_SIZES
-# (build_parser's --poster-width default/choices), DirectorLookup, _no_director and
-# newest_films (main's seams), and poster_at_width (_served_poster). FilmRecord is
-# the record type this tool writes, re-exported so a caller can name it without
-# reaching into src/. diary_entries, poster_from_description, LETTERBOXD_NS,
-# _rating, _record and _tmdb_id are used only by `tests/`, driven as
-# `film_scan.<name>`.
+# Used by this file's own code: DirectorLookup, PosterLookup, _no_director,
+# _no_poster, and newest_films (main's seams), FilmRecord (the record type this tool
+# writes, re-exported so a caller can name it without reaching into src/), and
+# tmdb_poster_lookup (the live poster lookup). diary_entries, LETTERBOXD_NS, _rating,
+# _record, _tmdb_id, poster_from_movie_json, poster_url_or_none, tmdb_movie_url, and
+# TMDB_IMAGE_BASE are used only by `tests/`, driven as `film_scan.<name>`.
 from film_parse import (  # noqa: F401 - re-exports
     LETTERBOXD_NS,
-    DEFAULT_POSTER_WIDTH,
-    POSTER_SIZES,
     DirectorLookup,
     FilmRecord,
+    PosterLookup,
     _no_director,
+    _no_poster,
     _rating,
     _record,
     _tmdb_id,
     diary_entries,
     newest_films,
-    poster_at_width,
-    poster_from_description,
+)
+from tmdb_poster import (  # noqa: F401 - re-exports
+    TMDB_IMAGE_BASE,
+    poster_from_movie_json,
+    poster_url_or_none,
+    tmdb_movie_url,
+    tmdb_poster_lookup,
 )
 
-#: The public diary feed. No key, no account, no API -- verified 2026-08-31.
+#: The public diary feed. No key, no account, no API: verified 2026-08-31.
 FEED_TEMPLATE = "https://letterboxd.com/{username}/rss/"
 
 _DEFAULT_OUTPUT = "src/data/films.json"
 
-#: Read when `--username` is absent, so the username -- a personal identifier -- never
+#: Read when `--username` is absent, so the username, a personal identifier, never
 #: has to appear in a shell history or a scheduled command line. The name is the one
 #: tests/test_live_feed.py already reads, so one environment serves the refresh and
 #: the live suite alike.
 USERNAME_ENV = "FILM_SCAN_USERNAME"
+
+#: The TMDB API read token (v4), sent only as an `Authorization: Bearer` header on
+#: TMDB's movie-details requests. Read from the environment only (a scheduled caller
+#: passes it through from its own environment), so it never appears on a command line, and no
+#: message, log line, or record ever carries its value. Unset or empty: no posters.
+TMDB_TOKEN_ENV = "FILM_SCAN_TMDB_TOKEN"
 
 _EXIT_OK = 0
 _EXIT_NO_FILM = 1
@@ -96,8 +108,8 @@ _EXIT_BAD_INPUT = 2
 def feed_url(username: str) -> str:
     """The RSS URL for a member's diary.
 
-    The username is a RUNTIME argument with no default, and is never written into the
-    record, this repository's docs, or a commit message -- it identifies the account
+    The username is a runtime argument with no default, and is never written into the
+    record, this repository's docs, or a commit message: it identifies the account
     holder, and no keyword scanner would flag a bare username, so it is kept out by
     construction. Percent-encoded so a value containing `/` or `?` cannot reshape the URL.
     """
@@ -110,27 +122,31 @@ def build_parser() -> argparse.ArgumentParser:
         description=(
             "Fetch a member's Letterboxd diary and write the site's film record."
         ),
-        # The shared formatter, not argparse's stock one: below CPython 3.13 the stock
-        # formatter stamps a misleading "(default: None)" on a REQUIRED option, and this
-        # project's floor is 3.12 (pyproject.toml's [project].requires-python).
-        formatter_class=help_formatter.ReqAwareDefaultsFormatter,
+        # The shared formatter, not argparse's stock one. Below CPython 3.13 the stock
+        # formatter stamps a misleading "(default: None)" on a required option, and this
+        # project's floor is 3.12 (pyproject.toml's [project].requires-python). This one
+        # also hides the default of an option left unset, whose help says what leaving
+        # it out means.
+        formatter_class=help_formatter.UnsetHidingFormatter,
         epilog=(
-            "Prerequisites: a public Letterboxd profile with diary entries -- no "
-            "account, key, or API needed. Run by hand whenever the record should "
-            "refresh; never as a build step or at page-view time. Network cost: "
-            "one feed fetch, one GET per film recorded to verify its resized "
-            "poster, plus about three Wikidata calls per film recorded. "
-            "--no-director skips the lookups entirely and is the lever for a "
-            "fast refresh. --feed-file also skips the fetch and the poster "
-            "verification, for a fully offline run (how samples/ is "
+            "Prerequisites: a public Letterboxd profile with diary entries (no "
+            "account or key needed for the feed) and, for posters, a TMDB API "
+            f"read token in {TMDB_TOKEN_ENV} (unset: every film is recorded with "
+            "no poster). Run by hand whenever the record should refresh; never as "
+            "a build step or at page-view time. Network cost: one feed fetch, one "
+            "TMDB API call per film recorded, plus about three Wikidata calls per "
+            "film recorded. --no-director skips the Wikidata lookups and is the "
+            "lever for a fast refresh. --feed-file skips the feed fetch and the "
+            "TMDB calls too, for a fully offline run (how samples/ is "
             "regenerated).\n\n"
             "Run order: run this tool (writes --output), review the written "
-            "record(s), then commit them -- no separate render/paste step; "
+            "record(s), then commit them. There is no separate render/paste step; "
             "the page reads the record(s) directly in the browser.\n\n"
             "Exit codes: 0 wrote the record(s) - 1 no diary entries in the feed "
             "(every item was a list, or the feed was empty) - 2 the feed could "
             "not be read (a network failure, an unreadable --feed-file, or a "
-            "feed that is not parseable XML)."
+            "feed that is not parseable XML) - 3 the server answered that the "
+            "feed is gone (HTTP 404 or 410), which a retry will not change."
         ),
     )
     parser.add_argument(
@@ -156,68 +172,59 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--no-director",
         action="store_true",
+        # None, not False, when omitted: the formatter hides a None default, and a
+        # flag's help already says what giving it does. Read for truth only.
+        default=None,
         help="Skip the Wikidata director lookup and record a null director.",
-    )
-    parser.add_argument(
-        "--poster-width",
-        type=int,
-        choices=sorted(POSTER_SIZES),
-        default=DEFAULT_POSTER_WIDTH,
-        help=(
-            "Poster width to record, from the set Letterboxd pre-generates for SOME "
-            "posters (it answers 403 for any other, so the choices are the measured "
-            "set, not a range). A live run verifies each rewritten URL and falls "
-            "back to the feed's own poster where that size is refused; a "
-            "--feed-file run keeps the rewrite unverified."
-        ),
     )
     parser.add_argument(
         "--feed-file",
         type=Path,
         default=None,
         help=(
-            "Read the diary feed from this local file instead of fetching it -- "
-            "makes a refresh reproducible with no network call."
+            "Read the diary feed from this local file instead of fetching it, "
+            "which makes a refresh reproducible with no network call."
         ),
     )
     return parser
 
 
-def _served_poster(poster: str, width: int, fetch: feed_read.Fetcher | None) -> str:
-    """`poster` re-pointed at `width`, kept only when Letterboxd actually serves it.
+def _poster_lookup(
+    offline: bool, poster_fetch: feed_read.HeaderFetcher
+) -> PosterLookup:
+    """The poster lookup this run uses: TMDB with the token, or none at all.
 
-    MEASURED 2026-09-04: the pre-generated sizes are PER POSTER, not one universal
-    set -- one real film's 400-wide poster answered 403 while its 300, 500 and 600
-    all answered 200, and the other recorded films' 400s served fine. The page drops
-    a poster whose image fails to load, so an unverified rewrite surfaced as a
-    text-only card. This GETs the rewritten URL once, through the same `fetch` seam
-    the feed uses (one seam keeps every test's injection unchanged; one GET per
-    recorded film at a by-hand refresh is negligible), and falls back to the feed's
-    own URL -- the one guaranteed to exist -- when the rewrite is refused.
-
-    `fetch` is None on an offline (`--feed-file`) run, which keeps the UNVERIFIED
-    rewrite: that path must stay fully offline (samples/ regenerates through it with
-    an exploding fetch), and film_scan.md documents the trade. Statement-form
-    guards throughout, not conditional expressions, for the coverage reason `main`
+    None on an offline (`--feed-file`) run, which must make no network call, and
+    none when `TMDB_TOKEN_ENV` is unset or empty, said once on stderr, by the
+    variable's name, never a value. Statement form, for the coverage reason `main`
     records.
     """
-    resized = poster_at_width(poster, width)
-    if fetch is None:
-        return resized
-    if resized == poster:
-        # Nothing was rewritten (no size suffix), so there is nothing to verify.
-        return resized
-    try:
-        fetch(resized, feed_read.FEED_TIMEOUT_SECONDS)
-    except (OSError, ValueError, http.client.HTTPException) as exc:
-        # An HTTPError IS the refused response (urllib's addinfourl, socket and
-        # all): close it here, or CPython warns at garbage collection that the
-        # file was implicitly cleaned up. A timeout or a parse error carries no
-        # response, so the same tuple `main` catches for the feed stays as is.
-        if isinstance(exc, urllib.error.HTTPError):
-            exc.close()
-        return poster
-    return resized
+    if offline:
+        return _no_poster
+    token = os.environ.get(TMDB_TOKEN_ENV)
+    if not token:
+        print(
+            f"film_scan: {TMDB_TOKEN_ENV} is unset, so no film gets a poster",
+            file=sys.stderr,
+        )
+        return _no_poster
+    return tmdb_poster_lookup(token, poster_fetch)
+
+
+def _report_missing_posters(records: Sequence[FilmRecord]) -> None:
+    """One stderr line counting the films left without a poster, when there are any.
+
+    A count only, never a title: the reason is the lookup's (no token, no TMDB id,
+    no TMDB poster, a failed request), and none of those is worth echoing a third
+    party's text to a terminal for. A film with no poster is a text-only card, not
+    an error, so the exit code does not change.
+    """
+    missing = sum(1 for record in records if record["poster"] is None)
+    if missing:
+        print(
+            f"film_scan: {missing} of {len(records)} film(s) left without a poster",
+            file=sys.stderr,
+        )
 
 
 def main(
@@ -225,16 +232,17 @@ def main(
     *,
     fetch: feed_read.Fetcher = feed_read.real_fetch,
     lookup: DirectorLookup = directors_for,
+    poster_fetch: feed_read.HeaderFetcher = feed_read.real_fetch_with_headers,
 ) -> int:
     """Fetch, parse, and write up to `--count` film records. Returns the exit code.
 
     Runs `validate -> act -> confirm -> record`: parse args; resolve the feed body;
     pick the newest `--count` films; write the records; print a one-line
-    confirmation. `fetch` and `lookup` are the two network injection seams every
-    unit test replaces, so no unit test reaches the network. Unlike `newest_films`,
-    `lookup`'s default here DOES resolve over the network: a bare command-line run is
-    exactly the case that should name the director, while the library default stays
-    inert.
+    confirmation. `fetch`, `lookup`, and `poster_fetch` are the three network
+    injection seams every unit test replaces, so no unit test reaches the network.
+    Unlike `newest_films`, `lookup`'s default here does resolve over the network: a
+    bare command-line run is the case that should name the director, while the
+    library default stays inert.
     """
     # First statement, before anything is printed: this tool's output is captured by
     # a pipe (a scheduled run, another tool's caller) as often as it is read in a
@@ -243,10 +251,10 @@ def main(
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    # Validate the identity BEFORE the feed branch, from either source: the parser
-    # cannot see the environment, so the refusal lives here, and stays a USAGE error
+    # Validate the identity before the feed branch, from either source: the parser
+    # cannot see the environment, so the refusal lives here, and stays a usage error
     # (exit 2 with the usage line) rather than a feed error. Statement form, not a
-    # conditional EXPRESSION: coverage.py emits branch arcs for an if/else STATEMENT
+    # conditional expression: coverage.py emits branch arcs for an if/else statement
     # but none for `x if cond else y`, so an untested side would hide behind a
     # truthful 100%. Falsiness, not `is None`, on the second test: a half-filled
     # identities file exports `FILM_SCAN_USERNAME=`, and an empty username would
@@ -270,15 +278,16 @@ def main(
         # Never echoes the username: urllib's own exceptions (URLError, HTTPError,
         # socket.timeout) report a reason or an HTTP status, never the request URL,
         # and feed_read.feed_items' ValueError messages describe the XML, not the
-        # request that fetched it -- so `exc` here never carries the username.
+        # request that fetched it, so `exc` here never carries the username.
         # Diagnostics go to stderr: stdout is the success summary, and a pipeline
         # reading it must not take a failure line for output.
         print(f"film_scan: could not read the diary feed: {exc}", file=sys.stderr)
-        # An HTTPError IS the refused response, body and all: close it here, the
-        # same way _served_poster closes its own, rather than leak the connection.
+        # An HTTPError is the refused response, body and all: close it here, the
+        # same way the TMDB lookup closes its own, rather than leak the connection.
         if isinstance(exc, urllib.error.HTTPError):
             exc.close()
-        return _EXIT_BAD_INPUT
+        # A 404 or 410 is final: its own exit, so a scheduled refresh does not retry.
+        return feed_read.EXIT_FEED_GONE if feed_read.feed_gone(exc) else _EXIT_BAD_INPUT
 
     # Statement form, not a conditional expression, for the reason the feed-file
     # branch above records. Substituting the no-op lookup rather than branching at
@@ -291,31 +300,15 @@ def main(
     else:
         resolve = lookup
 
-    records = newest_films(items, args.count, lookup=resolve)
+    records = newest_films(
+        items,
+        args.count,
+        lookup=resolve,
+        poster_lookup=_poster_lookup(args.feed_file is not None, poster_fetch),
+    )
     if not records:
         print("film_scan: no film found in the diary feed", file=sys.stderr)
         return _EXIT_NO_FILM
-    # Statement form again: the probe seam is the feed's own `fetch`, withheld on
-    # a --feed-file run so that path stays fully offline (see _served_poster).
-    probe: feed_read.Fetcher | None
-    if args.feed_file is None:
-        probe = fetch
-    else:
-        probe = None
-    for record in records:
-        # Re-point the poster at the smaller pre-generated size before the record
-        # is written, verified against the CDN. Done HERE rather than inside
-        # `_record` so the parsing layer keeps returning the feed's own URL,
-        # verbatim once it passes the https rule, and the size stays the caller's
-        # choice. KEEP THE None GUARD: a Letterboxd entry can carry no poster at
-        # all, or one the rule refused, and poster_at_width would crash on it --
-        # fixtures/diary.xml's "Posterless" entry exists to catch a loop that
-        # quietly drops this check.
-        if record["poster"] is not None:
-            record["poster"] = _served_poster(
-                record["poster"], args.poster_width, probe
-            )
-
     try:
         feed_read.write_records(Path(args.output), records)
     except OSError as exc:
@@ -323,6 +316,7 @@ def main(
         # previous record is still in place (the rename never happened).
         print(f"film_scan: could not write the record file: {exc}", file=sys.stderr)
         return _EXIT_BAD_INPUT
+    _report_missing_posters(records)
     print(
         f"film_scan: wrote {len(records)} film(s), newest {feed_read.terminal_safe_text(str(records[0]['title']))} "
         f"({records[0]['watched']})"

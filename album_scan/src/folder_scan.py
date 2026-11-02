@@ -5,8 +5,8 @@ answer. It ranks by each album folder's birth time, which is a heuristic rather 
 recorded "date added": `album_scan.md`, "The folder source", holds the field evidence
 for where it misleads, and why Music.app's own date is preferred wherever it exists.
 
-Everything here answers one question -- which album directories under the library root
-were created most recently -- and none of it touches Music.app, the network, or the
+Everything here answers one question (which album directories under the library root
+were created most recently), and none of it touches Music.app, the network, or the
 record's shape. Nothing here prints, either: an artist folder the scan cannot list is
 handed to the caller's `on_skip` by name, and the caller decides what to say.
 """
@@ -23,12 +23,12 @@ from library_walk import SkipReporter, album_dirs, ignore_skipped
 def _birth_time(path: Path) -> dt.datetime:
     """The folder's creation time, at the full precision the file system keeps.
 
-    macOS records a birth time, which is what "date added" means here -- though an
+    macOS records a birth time, which is what "date added" means here, though an
     iCloud Drive item that is evicted and re-materialized gets a new one (see
     `album_scan.md`, "Why the folder scan's date is a heuristic"). An album folder
     on a real library was created months before it was re-tagged, so `st_mtime`
     would have announced an old album as newly added. Platforms without
-    `st_birthtime` fall back to `st_mtime`, which is wrong in exactly that way but is
+    `st_birthtime` fall back to `st_mtime`, which is wrong in that way but is
     the best available and keeps the tool importable off macOS for type checking and
     unit tests.
 
@@ -57,7 +57,7 @@ def newest_albums(
     is a legitimate state that simply produces no albums. Both name the root by its
     final component only: the listing's own PermissionError carries the whole path in
     its text, which is why it is re-raised rather than let through. Returns fewer than
-    `count` when the library holds fewer albums -- a short result, not an error.
+    `count` when the library holds fewer albums: a short result, not an error.
     `on_skip` hears the name of each artist folder the scan could not
     list (`library_walk.album_dirs`, the walk every tool here shares).
     """

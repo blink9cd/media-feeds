@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<!-- An invented stand-in for a Goodreads book page, cut to the two things book_scan reads.
+     MEASURED 2026-10-28 on the real /book/show/<id> pages for public ids 1, 2 and 11:
+     each carries exactly one <meta property="og:image"> in the head, self-closed, its
+     content an https cover on Goodreads' image CDN. The og:image:width tag below is not
+     on the real page; it is here so the parser is shown to match the property exactly.
+     MEASURED 2026-10-28: the real page states the year in a text node beginning
+     "First published <Month> <day>, <year>"; this one's date is invented. -->
+<head>
+<meta charset="utf-8"/>
+<title>A Fictional Book by An Invented Author | Goodreads</title>
+<meta property="og:title" content="A Fictional Book"/>
+<meta property="og:image:width" content="318"/>
+<meta property="og:image" content="https://images.example.invalid/books/1700000000i/7000004.jpg"/>
+<meta property="og:type" content="books.book"/>
+</head>
+<body><h1>A Fictional Book</h1>
+<p data-testid="publicationInfo">First published March 3, 1999</p>
+</body>
+</html>

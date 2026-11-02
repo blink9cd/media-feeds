@@ -39,7 +39,7 @@ here may print what it is handed. The default `on_skip`, `ignore_skipped`, repor
 nothing.
 
 The root's own listing is not caught. A root that cannot be listed raises as
-`Path.iterdir` raises, and the caller decides how to name it: `album_scan` names the
+`Path.iterdir` raises, and the caller decides how to name it: a caller may name the
 root by its final component only, for the reason above.
 
 ## Tests

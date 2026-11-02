@@ -1,5 +1,5 @@
 """Grouped suite: what a redirect may carry and where it may go, proven by calling the
-redirect handler directly -- no connection is opened.
+redirect handler directly, so no connection is opened.
 
 urllib's stock redirect handler copies every header in `Request.headers` onto the next
 hop, whichever host or scheme that is, and the https rule at the sink only sees the

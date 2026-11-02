@@ -1,7 +1,7 @@
 """Grouped suite: this repository's sys.path bootstrap never reaches above its own root.
 
 Each tool puts the vendored libraries and its sibling tool folders on ``sys.path`` from
-ONE fixed place: directly under the repository root, derived from the tool's own
+one fixed place: directly under the repository root, derived from the tool's own
 ``__file__``. Nothing here searches the ancestors, so no folder above a checkout can be
 imported in place of the real one. ``stdio_utf8.md``, "How this project's tools import
 it", says why.
@@ -23,13 +23,17 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 
 #: Every file carrying a sys.path bootstrap, relative to the root, with the arguments
-#: that run it to a clean exit. film_parse is a module rather than a CLI, and cover_art
-#: a library: run bare, each bootstraps, imports its siblings, and exits.
+#: that run it to a clean exit. The src/ files are modules rather than CLIs, and
+#: cover_art a library: run bare, each bootstraps, imports its siblings, and exits.
 _BOOTSTRAPPED: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("film_scan/film_scan.py", ("--help",)),
     ("book_scan/book_scan.py", ("--help",)),
     ("wikidata_director/wikidata_director.py", ("--help",)),
     ("film_scan/src/film_parse.py", ()),
+    ("film_scan/src/tmdb_poster.py", ()),
+    ("book_scan/src/goodreads_cover.py", ()),
+    ("book_scan/src/goodreads_rss.py", ()),
+    ("book_scan/src/goodreads_widget.py", ()),
     ("album_scan/album_scan.py", ("--help",)),
     ("cover_art/cover_art.py", ()),
 )
@@ -89,8 +93,8 @@ class TestBootstrapStaysInsideTheRepository(unittest.TestCase):
     def _staged_copy(self, parent: Path) -> Path:
         """This repository's tool folders copied to ``<parent>/repo``, without caches.
 
-        A tool folder is one holding a module named after it -- the layout every
-        bootstrap relies on -- so nothing else at the root (a virtualenv, say) is
+        A tool folder is one holding a module named after it, the layout every
+        bootstrap relies on, so nothing else at the root (a virtualenv, say) is
         copied on every run.
         """
         repo = parent / "repo"
@@ -115,7 +119,7 @@ class TestBootstrapStaysInsideTheRepository(unittest.TestCase):
 
     def test_the_decoys_fire_for_an_unbounded_search(self) -> None:
         # The control: the old walk-every-ancestor bootstrap, run from the same staged
-        # layout, does run a decoy -- so a clean result above is not a dead decoy.
+        # layout, does run a decoy, so a clean result above is not a dead decoy.
         probe = (
             "import sys\n"
             "from pathlib import Path\n"

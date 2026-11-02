@@ -1,7 +1,7 @@
 """The record write: its exact bytes, the parents it creates, and how it fails.
 
-Everything here is about `--output` itself -- the bytes that land there, the directory
-created above it, and what a write that cannot complete leaves behind -- rather than
+Everything here is about `--output` itself (the bytes that land there, the directory
+created above it, and what a write that cannot complete leaves behind) rather than
 about which book the CLI picks. Every test injects `fetch` and points `--output` under
 a `tempfile.TemporaryDirectory()`; no unit test reaches the network.
 
@@ -25,6 +25,7 @@ _TOOL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_TOOL_ROOT))
 sys.path.insert(0, str(_TOOL_ROOT.parent / "feed_read"))
 
+from _book_scan_offline import offline_main  # noqa: E402 - follows the sys.path bootstrap above
 import book_scan  # noqa: E402 - import follows the sys.path bootstrap above
 import feed_read  # noqa: E402 - import follows the sys.path bootstrap above
 
@@ -55,7 +56,7 @@ class RecordWriteTest(unittest.TestCase):
         """Run `main` against the fixture, writing to `out`: (code, stdout, stderr)."""
         stdout, stderr = io.StringIO(), io.StringIO()
         with redirect_stdout(stdout), redirect_stderr(stderr):
-            code = book_scan.main(
+            code = offline_main(
                 ["--user-id", _A_USER_ID, "--output", str(out)],
                 fetch=_fetch_returning(_FIXTURE),
             )
@@ -82,8 +83,8 @@ class RecordWriteTest(unittest.TestCase):
         self,
     ) -> None:
         # The OS refuses the rename onto a directory. That must come back as the
-        # documented exit 2 with one line on stderr -- not a traceback, and not the
-        # exit 1 that means "no book found" -- and the temp file must not survive it.
+        # documented exit 2 with one line on stderr (not a traceback, and not the
+        # exit 1 that means "no book found"), and the temp file must not survive it.
         out = self.root / "books.json"
         out.mkdir()
         code, _stdout, stderr = self._run(out)
@@ -93,8 +94,8 @@ class RecordWriteTest(unittest.TestCase):
 
     def test_a_failed_rename_keeps_the_previous_record_byte_for_byte(self) -> None:
         # The atomic rename is what guarantees a reader never sees a half-written
-        # record; when the rename itself fails, the old file must be untouched --
-        # not truncated, not partly rewritten -- and the temp file removed.
+        # record; when the rename itself fails, the old file must be untouched (not
+        # truncated, not partly rewritten) and the temp file removed.
         out = self.root / "books.json"
         old_content = '[{"title": "Old Book", "read": "2020-01-01"}]'
         out.write_text(old_content, encoding="utf-8", newline="\n")
@@ -104,6 +105,22 @@ class RecordWriteTest(unittest.TestCase):
         self.assertIn("simulated rename", stderr)
         self.assertEqual(out.read_text(encoding="utf-8"), old_content)
         self.assertEqual(list(self.root.glob("*.tmp")), [])
+
+    def test_an_undated_newest_record_prints_no_read_date(self) -> None:
+        # A widget record carries no read date, so the success line must
+        # end at the title rather than print "(None)".
+        undated = book_scan.BookRecord(
+            title="An Undated Book",
+            author="An Author",
+            year=None,
+            rating=None,
+            read=None,
+            cover=None,
+        )
+        with patch.object(book_scan, "fill_from_pages", return_value=[undated]):
+            code, stdout, _stderr = self._run(self.root / "books.json")
+        self.assertEqual(code, 0)
+        self.assertEqual(stdout, "book_scan: wrote 1 book(s), newest An Undated Book\n")
 
 
 if __name__ == "__main__":

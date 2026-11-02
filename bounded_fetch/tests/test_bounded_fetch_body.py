@@ -48,7 +48,7 @@ class TestReadBody(unittest.TestCase):
     def test_a_body_still_arriving_past_the_deadline_is_a_timeout(self) -> None:
         # Readings, not sleeps: the clock is read once at the start and once after
         # each chunk, and the second chunk lands past the deadline. Iterating the
-        # readings also pins that count -- a spare call would raise StopIteration.
+        # readings also pins that count: a spare call would raise StopIteration.
         readings = iter([0.0, 10.0, 61.0])
         response = io.BytesIO(b"x" * (3 * bounded_fetch._READ_CHUNK_BYTES))
         with self.assertRaises(TimeoutError) as caught:

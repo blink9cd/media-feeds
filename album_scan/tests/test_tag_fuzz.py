@@ -28,9 +28,9 @@ import album_scan  # noqa: E402, F401 - imported for its sys.path bootstrap
 # album_scan's bootstrap above is what puts its private src/ on sys.path.
 import folder_facts  # noqa: E402 - import follows the sys.path bootstrap above
 
-# A REGISTERED profile loaded at import time, never an `@settings` decorator: a `@given`
-# test snapshots its settings when decorated, and `fuzz_gate --explore` re-applies its
-# own settings, which Hypothesis refuses on a function already carrying one.
+# A registered profile loaded at import time, never an `@settings` decorator: a `@given`
+# test snapshots its settings when decorated, and a longer fuzzing run that re-applies
+# its own settings is refused by Hypothesis on a function already carrying one.
 # derandomize=True keeps the in-suite run reproducible; deadline=None and the too_slow
 # suppression keep a loaded machine or a cold cache from reading as a flaky property.
 settings.register_profile(
@@ -42,7 +42,7 @@ settings.register_profile(
 )
 settings.load_profile("fuzz_gate_deterministic")
 
-#: The ID3v2 major versions mutagen reads: 2.2, 2.3 and 2.4.
+#: The ID3v2 major versions mutagen reads: 2.2, 2.3, and 2.4.
 _MAJOR_VERSIONS = (2, 3, 4)
 
 #: The largest body drawn: enough for a run of frames, small enough to stay fast.

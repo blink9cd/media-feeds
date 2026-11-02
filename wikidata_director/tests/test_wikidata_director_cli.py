@@ -1,6 +1,6 @@
 """Grouped suite: the CLI's exit codes, its streams, and its argument surface.
 
-`fetch` is injected here exactly as it is in the parent suite, so nothing in this file
+`fetch` is injected here just as it is in the parent suite, so nothing in this file
 reaches the network either.
 """
 

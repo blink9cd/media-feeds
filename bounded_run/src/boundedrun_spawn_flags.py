@@ -1,6 +1,6 @@
 """The ``creationflags`` every ``bounded_run`` spawn passes to ``Popen``.
 
-Private to ``bounded_run``: the ``src/`` dir ``tool_subdirs`` defines, so nothing outside that
+Private to ``bounded_run``: it sits in that tool's own ``src/`` folder, so nothing outside the
 tool folder imports it. Its name carries the tool's prefix, so it cannot shadow another tool's
 module on ``sys.path``.
 

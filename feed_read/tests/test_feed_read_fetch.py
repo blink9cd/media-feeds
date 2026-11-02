@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import feed_read  # noqa: E402 - import follows the sys.path bootstrap above
 
-#: One call `real_fetch` made to `fetch_url`: its URL, timeout and headers.
+#: One call `real_fetch` made to `fetch_url`: its URL, timeout, and headers.
 _Call = tuple[str, float, dict[str, str]]
 
 
@@ -34,10 +34,27 @@ def _captured_fetch(url: str, timeout: float) -> tuple[bytes, list[_Call]]:
     return body, calls
 
 
-class TestRealFetchWiring(unittest.TestCase):
-    """`real_fetch` hands its URL, its timeout and the User-Agent to `fetch_url`.
+def _captured_header_fetch(
+    headers: Mapping[str, str],
+) -> tuple[bytes, list[_Call]]:
+    """`real_fetch_with_headers`' body for a fixed URL, and its calls to `fetch_url`."""
+    calls: list[_Call] = []
 
-    MEASURED 2026-09-01 (see `_USER_AGENT` in feed_read.py): Letterboxd returns HTTP
+    def fake_fetch_url(url: str, timeout: float, sent: Mapping[str, str]) -> bytes:
+        calls.append((url, timeout, dict(sent)))
+        return b"<rss/>"
+
+    with mock.patch.object(feed_read.bounded_fetch, "fetch_url", fake_fetch_url):
+        body = feed_read.real_fetch_with_headers(
+            "https://api.example.invalid/x", 4.0, headers
+        )
+    return body, calls
+
+
+class TestRealFetchWiring(unittest.TestCase):
+    """`real_fetch` hands its URL, its timeout, and the User-Agent to `fetch_url`.
+
+    Measured 2026-09-01 (see `_USER_AGENT` in feed_read.py): Letterboxd returns HTTP
     403 Forbidden for the urllib default User-Agent ("Python-urllib/3.14") and HTTP
     200 for a plain product identifier; Goodreads accepts either. The connection
     itself is `bounded_fetch`'s and excluded from coverage there, so the header is
@@ -60,11 +77,37 @@ class TestRealFetchWiring(unittest.TestCase):
         )
 
     def test_the_user_agent_is_not_the_urllib_default(self) -> None:
-        # THE assertion that matters: Letterboxd rejects exactly this literal prefix,
-        # not "non-browser-ness" in general -- see _USER_AGENT.
+        # The assertion that matters: Letterboxd rejects this literal prefix,
+        # not "non-browser-ness" in general; see _USER_AGENT.
         _, calls = _captured_fetch("https://letterboxd.com/someone/rss/", 7.5)
         [(_, _, headers)] = calls
         self.assertFalse(headers["User-Agent"].startswith("Python-urllib"))
+
+    def test_a_header_taking_fetch_adds_the_callers_headers(self) -> None:
+        # The TMDB poster lookup needs an Authorization header; it goes through the
+        # same wiring, so the one User-Agent constant stays the only one.
+        body, calls = _captured_header_fetch({"Accept": "application/json"})
+        self.assertEqual(body, b"<rss/>")
+        self.assertEqual(
+            calls,
+            [
+                (
+                    "https://api.example.invalid/x",
+                    4.0,
+                    {
+                        "Accept": "application/json",
+                        "User-Agent": feed_read._USER_AGENT,
+                    },
+                )
+            ],
+        )
+
+    def test_a_callers_user_agent_cannot_replace_the_projects_own(self) -> None:
+        # One User-Agent for every request this project sends: a caller's header set
+        # adds to it and never overrides it.
+        _, calls = _captured_header_fetch({"User-Agent": "something-else"})
+        [(_, _, headers)] = calls
+        self.assertEqual(headers, {"User-Agent": feed_read._USER_AGENT})
 
     def test_the_moved_names_are_bounded_fetchs_own(self) -> None:
         # Re-exports, not copies: a second copy of the URL rule or the body bound

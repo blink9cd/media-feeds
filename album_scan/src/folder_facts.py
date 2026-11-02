@@ -5,12 +5,12 @@ and the favorites count comes from each track's ID3 `POPM` (popularimeter) frame
 only module in this project that imports mutagen, the tag reader the folder source
 needs; nothing here spawns a process or opens a connection.
 
-The star scale is the one POPM writers share: a rating byte of 1, 64, 128, 196 or 255
-starts one to five stars, and 0 is unrated. A track's rating is the HIGHEST byte across
+The star scale is the one POPM writers share: a rating byte of 1, 64, 128, 196, or 255
+starts one to five stars, and 0 is unrated. A track's rating is the highest byte across
 all of its POPM frames, whichever player wrote each one, since a frame per player is
 how the format records several opinions of one track. An album on which no track
 carries a POPM frame has no favorites count at all, which is a different fact from a
-counted zero -- and the common case for a library Music.app manages, since Music.app
+counted zero, and the common case for a library Music.app manages, since Music.app
 keeps its ratings in its own library rather than in the files.
 
 The walk below each album folder is recursive, so a multi-disc album's disc folders
@@ -56,7 +56,7 @@ _YEAR_FRAME = "TDRC"
 EARLIEST_YEAR = 1000
 LATEST_YEAR = 2999
 
-#: What `folder_facts` calls with the FILE NAME of each track whose tags it could not
+#: What `folder_facts` calls with the file name of each track whose tags it could not
 #: read: a corrupt tag, or a file it may not open.
 UnreadableReporter = Callable[[str], None]
 
@@ -96,8 +96,8 @@ def _year_of(tags: ID3) -> int | None:
 
     TDRC holds a timestamp ("2001-05-03") whose year mutagen parses; a v2.3 tag's
     TYER, a bare year, arrives as TDRC because mutagen upgrades it on load. A year
-    outside `EARLIEST_YEAR`..`LATEST_YEAR` -- 0 being an untagged year written as a
-    number -- reads as none.
+    outside `EARLIEST_YEAR`..`LATEST_YEAR` (0 being an untagged year written as a
+    number) reads as none.
     """
     frame = tags.get(_YEAR_FRAME)
     if frame is None:

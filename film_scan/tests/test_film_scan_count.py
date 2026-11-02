@@ -7,10 +7,13 @@ in the project, so test basenames must be unique across it.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
+from collections.abc import Mapping
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 _TOOL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_TOOL_ROOT))
@@ -37,6 +40,12 @@ def _fetch_returning(body: bytes) -> feed_read.Fetcher:
     return fetch
 
 
+def _tmdb_with_poster(url: str, timeout: float, headers: Mapping[str, str]) -> bytes:
+    """A fake TMDB fetch: every film has the same placeholder poster, no request made."""
+    del url, timeout, headers
+    return b'{"poster_path": "/a-placeholder-poster.jpg"}'
+
+
 class CountOptionTest(unittest.TestCase):
     """--count's surface: what it accepts, and what it refuses.
 
@@ -58,15 +67,19 @@ class CountOptionTest(unittest.TestCase):
         """Invoke `main` with a fixed --username and a faked feed fetch.
 
         A --count value argparse rejects raises `SystemExit` rather than
-        returning -- the same path the real `if __name__ == "__main__":` entry
-        point relies on -- so this normalizes both outcomes into the plain int
+        returning (the same path the real `if __name__ == "__main__":` entry
+        point relies on), so this normalizes both outcomes into the plain int
         every other CLI test in this suite already compares against.
         """
         try:
-            return film_scan.main(
-                ["--username", _A_USERNAME, "--no-director", *extra_args],
-                fetch=_fetch_returning(_FIXTURE),
-            )
+            with patch.dict(
+                os.environ, {film_scan.TMDB_TOKEN_ENV: "a-placeholder-token"}
+            ):
+                return film_scan.main(
+                    ["--username", _A_USERNAME, "--no-director", *extra_args],
+                    fetch=_fetch_returning(_FIXTURE),
+                    poster_fetch=_tmdb_with_poster,
+                )
         except SystemExit as exc:
             code = exc.code
             # argparse's own usage-error exit always passes an int status
@@ -95,11 +108,11 @@ class CountOptionTest(unittest.TestCase):
         self.assertIsInstance(json.loads(out.read_text(encoding="utf-8")), list)
 
     def test_a_valid_explicit_count_selects_that_many_films(self) -> None:
-        # Exercises `positive_int`'s SUCCESS path end to end through the parser:
+        # Exercises `positive_int`'s success path end to end through the parser:
         # every case above only ever reaches its ArgumentTypeError branch, so
         # this is what proves a well-formed --count value actually reaches
-        # `main` and `newest_films`, not just that a bad one is refused. The
-        # fixture holds exactly 3 diary entries (1 list item is excluded), so
+        # `main` and `newest_films`, as well as that a bad one is refused. The
+        # fixture holds 3 diary entries (1 list item is excluded), so
         # --count 3 is the largest value this fixture can satisfy in full.
         out = self.root / "films.json"
         self.assertEqual(self._run(["--count", "3", "--output", str(out)]), 0)
@@ -109,7 +122,7 @@ class CountOptionTest(unittest.TestCase):
     def test_a_count_of_one_selects_exactly_one_film_from_a_longer_diary(self) -> None:
         # `positive_int`'s boundary, end to end. The fixture holds 3 entries, so a
         # `--count 1` that was refused (exit 2) or that fell through as None (every
-        # entry written) both fail HERE -- the --count 3 case above cannot tell
+        # entry written) both fail here; the --count 3 case above cannot tell
         # either apart from a correct run.
         out = self.root / "films.json"
         self.assertEqual(self._run(["--count", "1", "--output", str(out)]), 0)

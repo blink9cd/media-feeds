@@ -1,9 +1,9 @@
 """The Apple boundary: find the apple-music-toolbox, load it, and convert what it answers.
 
-The ONLY module in this project that touches the toolbox, a separate project holding
+The only module in this project that touches the toolbox, a separate project holding
 the Music.app tools `--source music` and `--source auto` need: `recently_added` (which
 albums Music.app added most recently) and `album_stats` (one album's track count,
-favorites count and year). `--source folder`, the default, never reaches this module's
+favorites count, and year). `--source folder`, the default, never reaches this module's
 loader, so a run that does not ask for Music.app needs no toolbox installed at all.
 
 The toolbox is located at run time, in this order:
@@ -20,7 +20,7 @@ What keeps that from importing whatever happens to be there: the walk stops at t
 folder (home is the last ancestor searched, for a checkout under it); a candidate counts
 only when it holds both tool modules and it, its two tool folders and their modules are
 owned by the current user and writable by no other (a named one failing that is
-refused); album_scan APPENDS the folders to `sys.path`, so the standard library and this
+refused); album_scan appends the folders to `sys.path`, so the standard library and this
 project's own modules keep every name they already resolve; and nothing is searched for
 unless the operator asked for Music.app. Appending is album_scan's half only: the
 toolbox's own modules run their own bootstraps once imported, and those may insert their
@@ -165,7 +165,7 @@ def current_uid() -> int | None:
 def untrusted_reason(folder: Path, uid: int | None) -> str | None:
     """Why the toolbox at `folder` must not be imported, or None when it may be.
 
-    Checks the folder, its two tool folders and their two modules: each must be owned
+    Checks the folder, its two tool folders, and their two modules: each must be owned
     by `uid` and writable by neither group nor others, since any one of them writable
     by another account lets that account replace the code imported. `uid` None (the
     Windows case, `current_uid`) checks nothing. `folder` must already pass

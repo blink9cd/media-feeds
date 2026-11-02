@@ -1,13 +1,13 @@
 """Grouped suite: only an id made of ASCII digits is allowed to reach the search.
 
-`search_url` percent-encodes the id, which stops it reshaping the URL -- but the value
-lands inside a CirrusSearch EXPRESSION, and encoding does nothing to the expression's
+`search_url` percent-encodes the id, which stops it reshaping the URL, but the value
+lands inside a CirrusSearch expression, and encoding does nothing to the expression's
 own grammar: `12 OR haswbstatement:P4947=550` is a valid two-film query. The id
 arrives from a third-party feed, so `directors_for` refuses anything that is not a
 plain decimal id before any request is made, and answers None under its never-raises
 contract.
 
-`fetch` is injected here exactly as it is in the parent suite, so nothing in this file
+`fetch` is injected here just as it is in the parent suite, so nothing in this file
 reaches the network either.
 """
 

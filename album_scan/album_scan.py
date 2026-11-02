@@ -3,18 +3,19 @@
 Run by hand whenever a fresh record is wanted; never as a build step and never at
 page-view time. Two sources answer "most recently added": the library folder (`--source
 folder`, the default), which ranks album folders by birth time and reads each album's
-tracks, year and favorites from its own ID3 tags, and Apple Music (`--source music`),
+tracks, year, and favorites from its own ID3 tags, and Apple Music (`--source music`),
 which reads its own "date added" and counts through its supported AppleScript API, by
 way of the separate apple-music-toolbox project. `--source auto` asks Music.app first
 and falls back to the folder. See `album_scan.md`, "`--source`: choosing the date-added
 source" and "The two favorites signals", for what each one reads and where each
 misleads.
 
-Network cost scales with `--count`: resolving one album's cover costs TWO iTunes Search
+Network cost scales with `--count`: resolving one album's cover costs two iTunes Search
 requests, not one, because `artwork_url` pools an artist-and-album query with an
-artist-alone one and sends both unconditionally. Every one of them runs on the machine
-that runs this tool, at refresh time, never by whatever consumes the record afterward.
-See `album_scan.md`, "Who consumes this record", for what each key means -- this
+artist-alone one and sends both unconditionally, plus up to two artist-catalog
+lookups more for an album neither search returns. Every one of them runs on the machine
+that runs this tool, at refresh time, never by whatever consumes the record later.
+See `album_scan.md`, "Who consumes this record", for what each key means; this
 tool has no knowledge of any particular consumer.
 
 Private `src/` modules carry most of the work: every lookup (`src/album_lookups.py`),
@@ -22,14 +23,14 @@ the Apple boundary that finds and loads the toolbox (`src/apple_source.py`), the
 folder-scan discovery (`src/folder_scan.py`), the folder's own tags
 (`src/folder_facts.py`), the record's shape (`src/record_builder.py`), the stdout
 writer (`src/record_writer.py`) and the stderr notices beyond the outcome lines
-(`src/notices.py`). A record file is written by `feed_read.write_records`, the writer
+(`src/notices.py`), and the `--cover-report` file (`src/cover_report.py`). A record file is written by `feed_read.write_records`, the writer
 every adapter in this project shares. `__all__` below is what this module re-exports
 on their behalf, so `album_scan.<name>` resolves for each; the rest is reached only
 through `main`.
 
-NOTHING THIS TOOL WRITES MAY CONTAIN A FILESYSTEM PATH. See `album_scan.md`, "Why
+Nothing this tool writes may contain a filesystem path. See `album_scan.md`, "Why
 the record carries no filesystem path", for the full reasoning; `album_record` carries
-only names, a date, a year, a URL, counts and a signal name, and a test pins that.
+only names, a date, a year, a URL, counts, and a signal name, and a test pins that.
 """
 
 from __future__ import annotations
@@ -40,13 +41,13 @@ import sys
 from pathlib import Path
 
 # This tool's private src/ modules, then the shared libraries and the sibling tool
-# folders, each at ONE fixed place: directly under the project root, which is this
-# file's grandparent. Deliberately not a search up the ancestors -- that would also put
-# any same-named folder ABOVE the checkout on sys.path, ahead of the standard library,
+# folders, each at one fixed place: directly under the project root, which is this
+# file's grandparent. Deliberately not a search up the ancestors, which would also put
+# any same-named folder above the checkout on sys.path, ahead of the standard library,
 # and whatever it holds would be imported in place of the real module. A helper that is
-# absent fails loudly at the import below rather than being silently skipped. See
+# absent fails at the import below rather than being silently skipped. See
 # stdio_utf8/stdio_utf8.md, "How this project's tools import it". The
-# apple-music-toolbox is NOT put here: only a Music.app source needs it, and
+# apple-music-toolbox is not put here: only a Music.app source needs it, and
 # `src/apple_source.py` finds it then.
 sys.path[:0] = [str(Path(__file__).resolve().parent / "src")]
 sys.path += [
@@ -86,6 +87,11 @@ from apple_source import (  # noqa: E402 - follows the sys.path bootstrap
     Toolbox,
     ToolboxNotFoundError,
     open_toolbox,
+)
+from cover_report import (  # noqa: E402 - follows the sys.path bootstrap
+    cover_status,
+    report_entry,
+    write_cover_report,
 )
 from notices import (  # noqa: E402 - follows the sys.path bootstrap
     report_degradation,
@@ -201,10 +207,10 @@ def _record_for(
     args: argparse.Namespace,
     options: FactsOptions,
     fetch: Fetcher,
-) -> AlbumRecord:
-    """One album's record: its facts, then its cover, reported where degraded.
+) -> tuple[AlbumRecord, dict[str, str]]:
+    """One album's record and its `--cover-report` entry, reported where degraded.
 
-    FACTS BEFORE ARTWORK: the facts are resolved once and reused by both the record
+    Facts before artwork: the facts are resolved once and reused by both the record
     and the artwork match, whose tiebreakers they are (see `artwork_for`).
     """
     facts = facts_for(ref, source, options)
@@ -224,7 +230,8 @@ def _record_for(
         no_favorites=args.no_favorites,
         no_artwork=args.no_artwork,
     )
-    return album_record(ref, match.url, facts=facts, fallback_year=match.year)
+    record = album_record(ref, match.url, facts=facts, fallback_year=match.year)
+    return record, report_entry(ref, cover_status(match, no_artwork=args.no_artwork))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -309,7 +316,19 @@ def _add_output_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--no-artwork",
         action="store_true",
+        # None, not False, when omitted: the formatter hides a None default, and a
+        # flag's help already says what giving it does. Read for truth only.
+        default=None,
         help="Skip the cover-art lookup and record a null artwork URL.",
+    )
+    parser.add_argument(
+        "--cover-report",
+        default=None,
+        help=(
+            "Also write each recorded album's cover result to this JSON file: found, "
+            "no-match, lookup-failed, no-art, not-asked, or unknown. Written only when "
+            "the record is; one that cannot be written is said and fails nothing."
+        ),
     )
 
 
@@ -330,6 +349,7 @@ def _add_favorites_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--no-favorites",
         action="store_true",
+        default=None,  # None when omitted, for --no-artwork's reason above.
         help=(
             "Skip the favorites count and record null favorites. Under the "
             "Music.app sources the track count and year go with it, since they are "
@@ -347,11 +367,11 @@ def main(
 ) -> int:
     """Scan the library, resolve each newest album's cover art, and write the record(s).
 
-    Returns the exit code. `fetch` threads through to `artwork_url` -- the injection
-    seam `cover_art` defines (`Fetcher`, imported above) -- so a test can drive the
+    Returns the exit code. `fetch` threads through to `artwork_url` (the injection
+    seam `cover_art` defines, `Fetcher`, imported above), so a test can drive the
     artwork-resolving arm without reaching the network. `run` is the same kind of seam
     for every Music.app query: bound into the toolbox handle a Music.app source opens,
-    so a test can drive ANY `--source` outcome without spawning a real `osascript`
+    so a test can drive any `--source` outcome without spawning a real `osascript`
     process. Left None, it is the toolbox's own bounded runner.
     """
     # First statement, before anything is printed: this tool's output is captured by a
@@ -374,11 +394,11 @@ def main(
         return _EXIT_UNUSABLE_PATH
 
     if not result.refs:
-        # Exit 1 means ZERO albums found and nothing written. Finding fewer than
+        # Exit 1 means zero albums found and nothing written. Finding fewer than
         # --count asked for is success, not this case.
         if args.source == "music":
             # --source folder, and auto once it falls back, both consulted the
-            # library and found nothing there -- the message below covers both.
+            # library and found nothing there; the message below covers both.
             # --source music never touches the library at all, so naming it here
             # would misdiagnose what actually happened.
             print(
@@ -389,7 +409,7 @@ def main(
             print(f"album_scan: no album found under {library.name}", file=sys.stderr)
         return _EXIT_NO_ALBUM
 
-    # One facts lookup and one artwork lookup PER ALBUM, not one for the whole run:
+    # One facts lookup and one artwork lookup per album, not one for the whole run:
     # --count's network and subprocess cost scales with how many albums are recorded.
     options = FactsOptions(
         library=library,
@@ -397,16 +417,20 @@ def main(
         min_stars=args.favorite_min_stars,
         toolbox=toolbox,
     )
-    records = [
+    scanned = [
         _record_for(ref, result.resolved_source, args, options, fetch)
         for ref in result.refs
     ]
+    records = [record for record, _entry in scanned]
     code = _write_records(records, args.output)
     if code != _EXIT_OK:
         return code
-    # Names the source that answered on every success, not just the fallback case
+    if args.cover_report is not None:
+        # After the record, never instead of it: the report describes a written record.
+        write_cover_report(args.cover_report, [entry for _record, entry in scanned])
+    # Names the source that answered on every success, the fallback case included
     # above, so an operator never has to infer it from --source alone (under auto,
-    # either source can answer). On stderr unconditionally, not just when writing a
+    # either source can answer). On stderr unconditionally, even when writing a
     # file: a program whose messages change stream depending on how it was invoked
     # cannot be reasoned about, and stdout is reserved for the record(s) alone so
     # `--output -` piped anywhere gets nothing but parseable JSON.

@@ -1,11 +1,9 @@
-"""Every environment variable this project reads by name is declared to the gate cache.
+"""Every environment variable this project reads by name is listed in pyproject.toml.
 
 Each `*_OFFLINE` switch skips a live boundary test, and each identity variable skips one
-when it is absent, so every one of them changes a gate verdict without changing one file.
-The workspace gate's verdict cache folds in only the variables that `[tool.gate_cache]
-env` in this project's pyproject.toml declares. An undeclared one lets a verdict recorded
-with it unset be replayed into a run with it set, and the reverse -- an online sweep
-replaying an offline PASS never runs the live tests at all.
+when it is absent, so every one of them changes which tests run without changing one
+file. `[tool.gate_cache] env` in this project's pyproject.toml is the inventory of those
+variables, so a reader can see in one place every setting that changes a test run.
 
 So this test fails on a read nothing declares, or one whose name it cannot resolve, which stops a new switch landing without
 its declaration, and on a declaration nothing reads, which stops a renamed switch leaving
@@ -33,12 +31,12 @@ _MAPPINGS = frozenset({"os.environ", "environ"})
 _KNOWN_SWITCH = "FILM_SCAN_OFFLINE"
 
 # The vendored shared libraries, skipped by the scan below. Their environment use is
-# test-fixture plumbing -- a pid-file path a test exports for one child and reads back --
+# test-fixture plumbing (a pid-file path a test exports for one child and reads back),
 # not a switch that changes which tests run, so declaring it would say something untrue.
 # Two of those reads name a variable no static scan can resolve (a function parameter,
-# and a constant read through its module), which is exactly the shape this scan refuses
-# in this project's OWN code. Excluded by name rather than by listing the tool folders,
-# so a tool folder added later is scanned by default -- the safe direction.
+# and a constant read through its module), which is the shape this scan refuses in this
+# project's own code. Excluded by name rather than by listing the tool folders, so a
+# tool folder added later is scanned by default, which is the safe direction.
 _VENDORED = frozenset(
     {
         "stdio_utf8",
@@ -95,7 +93,7 @@ def _names_read(source: str) -> tuple[set[str], list[str]]:
     """Every name *source* reads from the environment, and each read it cannot name.
 
     A key resolves when it is a string literal or a module-level constant bound to one.
-    Anything else comes back as ``"<line>: <read>"`` so the test FAILS on it: skipping a
+    Anything else comes back as ``"<line>: <read>"`` so the test fails on it: skipping a
     read the scan cannot name would reopen the gap it exists to close.
     """
     tree = ast.parse(source)
@@ -174,6 +172,5 @@ class TestEnvDeclared(unittest.TestCase):
             sorted(read),
             sorted(_declared()),
             "[tool.gate_cache] env in this project's pyproject.toml must list exactly "
-            "the variables its code reads by name, or the gate cache replays a verdict "
-            "across a change in one of them",
+            "the variables its code reads by name, so the inventory stays true",
         )

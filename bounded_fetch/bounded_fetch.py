@@ -1,4 +1,6 @@
-"""A hardened HTTPS GET, bounded in what it may open, send, and read back.
+"""A hardened HTTPS GET and HEAD, bounded in what they may open, send, and read back.
+
+The HEAD reports a redirect instead of following it.
 
 One rule for which URLs may be requested at all (`https_url_or_none`), one place a
 request is built (`build_request`, which refuses everything that rule refuses and any
@@ -6,7 +8,10 @@ header that would break the request's framing), and one bounded body read
 (`read_body`, capped in size and in time). `fetch_url` chains the three around an
 opener from `build_opener`, whose redirect handler follows only https and keeps the
 caller's headers in their origin; it is the ONE network seam, which every unit test
-leaves alone -- the pieces either side of it are tested on their own.
+leaves alone: the pieces either side of it are tested on their own. `head_url` is
+the second seam: a HEAD through an opener from `build_no_follow_opener`, whose
+redirect handler follows nothing, with `answer_head` turning what comes back into a
+`HeadAnswer`.
 
 A pure library: no CLI, no `__main__`, standard library only. Each caller decides its
 own headers (a User-Agent a vendor requires, a bearer token) and its own timeout; this
@@ -15,17 +20,20 @@ module decides only what is safe to send and how much may come back.
 
 from __future__ import annotations
 
+import contextlib
 import http.client
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from typing import IO, NoReturn, Protocol
 
-#: Sized for a whole feed body (a real Goodreads read shelf measured ~187 KB at
-#: per_page=50). It bounds each blocking socket operation -- the connect, and every
-#: read of the body -- because that is the only place a bound can interrupt a call
+#: Sized for a whole feed body (a real RSS shelf measured ~187 KB at
+#: per_page=50). It bounds each blocking socket operation (the connect, and every
+#: read of the body) because that is the only place a bound can interrupt a call
 #: already in flight; the two constants below bound what a sequence of such calls may
 #: add up to. A default for callers, not a rule: `fetch_url` takes its timeout from
 #: the caller.
@@ -51,8 +59,8 @@ _READ_CHUNK_BYTES = 64 * 1024
 #: Unicode general categories starting with this letter are the control, format,
 #: surrogate, private-use and unassigned characters. None belongs unescaped in a URL,
 #: and no genuine vendor URL carries one, so `https_url_or_none` refuses the whole
-#: class rather than naming the few that are known to do damage. The same constant,
-#: for the same reason, is `cover_art._UNSAFE_CATEGORY_PREFIX` in media_feeds.
+#: class rather than naming the few that are known to do damage. When this was
+#: written, media_feeds' cover-art code held the same constant for the same reason.
 _UNSAFE_CATEGORY_PREFIX = "C"
 
 #: Why a header is refused, and all the refusal says: never the name, never the value,
@@ -61,6 +69,13 @@ _HEADER_REFUSAL = "refusing a request header that is not printable ASCII"
 
 #: Why a redirect is refused, and all the refusal says: never the target URL.
 _REDIRECT_REFUSAL = "refusing a redirect to anything but an https URL with a host"
+
+#: The methods `build_request` builds. GET reads a body; HEAD asks only for the status
+#: and headers, which is all a caller needs to learn where an address redirects.
+_METHODS = frozenset({"GET", "HEAD"})
+
+#: The redirection statuses, 300 to 399: `answer_head` returns these instead of raising.
+_REDIRECTS = range(300, 400)
 
 
 # fuzz-target
@@ -85,16 +100,16 @@ def https_url_or_none(url: str) -> str | None:
     line feed, so a URL smuggling a header break parses clean, and it never looks at
     a NUL, an escape or a zero-width mark at all. It scans the characters that are
     actually there, so a percent-ESCAPED space or control character is ordinary URL
-    text and survives. This is `cover_art._is_recordable_url`'s rule in
-    media_feeds, character for character; the two were written apart and the weaker
-    one let all of the above through.
+    text and survives. The rule was brought into line with media_feeds' cover-art URL
+    check while this code still lived in feed_read, whose earlier, weaker check let
+    all of the above through.
 
     urllib's opener speaks `file:`, `ftp:` and `data:` as readily as https, and none of
     those passes here, so none is ever opened. An https request to an internal
     address fails at the TLS handshake, on certificate verification, before any
     request line is sent: no public authority issues a certificate for a private
-    address. That holds for the FIRST hop only -- redirects are followed, and where
-    they go is the server's to say (an accepted risk, recorded 2026-09-21) -- so it
+    address. That holds for the FIRST hop only: redirects are followed, and where
+    they go is the server's to say (an accepted risk), so it
     is not a guarantee that nothing internal is ever reached.
 
     Accepted verbatim, uppercase scheme included: urllib lowercases the scheme
@@ -125,14 +140,21 @@ def _is_printable_ascii(text: str) -> bool:
     That excludes CR, LF and NUL, which would end a header early and start another
     of the sender's choosing (a header injection) or truncate it in whatever reads it
     next; tab, DEL and the other controls; and every non-ASCII character, which
-    `http.client` would try to encode as latin-1 -- raising, for anything outside it,
-    a `UnicodeEncodeError` whose args and repr carry the whole value.
+    `http.client` would try to encode as latin-1 (raising, for anything outside it,
+    a `UnicodeEncodeError` whose args and repr carry the whole value).
     """
     return text.isascii() and text.isprintable()
 
 
-def build_request(url: str, headers: Mapping[str, str]) -> urllib.request.Request:
-    """A GET request for `url`, carrying exactly the caller's `headers`.
+def build_request(
+    url: str, headers: Mapping[str, str], *, method: str = "GET"
+) -> urllib.request.Request:
+    """A GET or HEAD request for `url`, carrying exactly the caller's `headers`.
+
+    `method` is `"GET"` unless the caller asks for `"HEAD"`.
+
+    Raises `ValueError` for any other method, so no caller can send a body-bearing or
+    state-changing request through this module.
 
     Raises `ValueError` unless `https_url_or_none` accepts `url`. This is the one
     place a request is built for `fetch_url`, so no caller can send anything but
@@ -153,6 +175,8 @@ def build_request(url: str, headers: Mapping[str, str]) -> urllib.request.Reques
     so the headers and the refusals are all unit-testable: a dropped header fails a
     test instead of showing up as a live refusal from the server.
     """
+    if method not in _METHODS:
+        raise ValueError("refusing a request method other than GET or HEAD")
     if https_url_or_none(url) is None:
         raise ValueError("refusing to request anything but an https URL with a host")
     if not all(
@@ -160,7 +184,7 @@ def build_request(url: str, headers: Mapping[str, str]) -> urllib.request.Reques
         for name, value in headers.items()
     ):
         raise ValueError(_HEADER_REFUSAL)
-    request = urllib.request.Request(url)
+    request = urllib.request.Request(url, method=method)
     for name, value in headers.items():
         request.add_unredirected_header(name, value)
     return request
@@ -264,7 +288,7 @@ def read_body(
     timeout still bounds each of those reads, so a fetch waits at most `deadline`
     plus one socket timeout.
 
-    Raises `ValueError` past `limit` -- the body is not what was asked for -- and
+    Raises `ValueError` past `limit` (the body is not what was asked for) and
     `TimeoutError` once the body is still arriving `deadline` seconds after the read
     began: an `OSError`, like the socket timeout it backs up, so a caller's except
     clause around a fetch catches both. `clock` is injectable so the deadline is
@@ -303,3 +327,127 @@ def fetch_url(url: str, timeout: float, headers: Mapping[str, str]) -> bytes:
     opener = build_opener(headers)  # pragma: no cover
     with opener.open(request, timeout=timeout) as response:  # pragma: no cover
         return read_body(response)  # pragma: no cover
+
+
+@dataclass(frozen=True)
+class HeadAnswer:
+    """What a HEAD request was answered with: its status, and a redirect's target.
+
+    `location` is a redirect's `Location` header exactly as the server sent it (often
+    a path relative to the request), or None for a 2xx or for a redirect that named no
+    target. Resolving it, and deciding whether to trust it, is the caller's.
+    """
+
+    status: int
+    location: str | None
+
+
+class HeadResponse(Protocol):
+    """What `answer_head` needs of a 2xx response: its status, and a way to close it."""
+
+    @property
+    def status(self) -> int:
+        """The HTTP status code."""
+
+    def close(self) -> None:
+        """Release the connection."""
+
+
+#: `answer_head`'s seam: open the request and return the response, or raise.
+HeadOpen = Callable[[], HeadResponse]
+
+
+class _NoFollowRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Follow no redirect at all: the 3xx itself is the answer the caller wants.
+
+    Each redirect status method returns None, so the opener falls through to its
+    default error handler, which raises the 3xx as an `HTTPError` carrying the
+    response's headers, `Location` included, and no second request is sent anywhere.
+    The status methods are overridden, not just `redirect_request`: the stock
+    `http_error_302` parses and joins the `Location` header BEFORE it asks
+    `redirect_request`, so a malformed header would raise a `ValueError` quoting it,
+    and a target scheme urllib will not follow an `HTTPError` quoting it. Here the
+    header is never read. `redirect_request` declines too, for any caller that
+    reaches it directly.
+    """
+
+    def http_error_302(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: http.client.HTTPMessage,
+    ) -> None:
+        """None, always: the 3xx goes on to the default handler, unparsed."""
+        return None
+
+    # The base class's aliases point at ITS OWN http_error_302, so each status is
+    # re-aliased here; overriding 302 alone would leave the others parsing the header.
+    http_error_301 = http_error_303 = http_error_307 = http_error_308 = http_error_302
+
+    def redirect_request(
+        self,
+        req: urllib.request.Request,
+        fp: IO[bytes],
+        code: int,
+        msg: str,
+        headers: http.client.HTTPMessage,
+        newurl: str,
+    ) -> urllib.request.Request | None:
+        """None, always: decline the hop, so urllib raises the 3xx instead."""
+        return None
+
+
+def build_no_follow_opener() -> urllib.request.OpenerDirector:
+    """The default urllib opener, with a redirect handler that follows nothing.
+
+    urllib's default opener has no cookie handler, so nothing a server sets is kept
+    or sent back; only the redirect handler is replaced.
+    """
+    return urllib.request.build_opener(_NoFollowRedirectHandler())
+
+
+def answer_head(open_response: HeadOpen) -> HeadAnswer:
+    """What `open_response()` was answered with, as a `HeadAnswer`.
+
+    A 2xx response is its status, with no location. A 3xx, which the no-follow
+    opener raises as `HTTPError`, is its status and its `Location` header as sent,
+    or None when it has none. Any other `HTTPError` (a 4xx or 5xx) is raised
+    unchanged, so a caller reads its status and headers (a 429's `Retry-After`)
+    exactly as it would from `fetch_url`; every other failure passes through.
+
+    Every response and every error is closed before this returns or raises: a HEAD
+    answer has no body to read, and its headers stay readable after the close.
+    Kept apart from `head_url`'s `opener.open`, the network seam, so this translation
+    is unit-tested with fakes in its place.
+    """
+    try:
+        response = open_response()
+    except urllib.error.HTTPError as error:
+        error.close()
+        if error.code not in _REDIRECTS:
+            raise
+        headers = error.headers
+        location = headers.get("Location") if headers is not None else None
+        return HeadAnswer(error.code, location)
+    with contextlib.closing(response):
+        return HeadAnswer(response.status, None)
+
+
+def head_url(url: str, timeout: float, headers: Mapping[str, str]) -> HeadAnswer:
+    """HEAD `url` with `headers`, following no redirect, each socket wait `timeout`.
+
+    A 2xx or 3xx is returned as a `HeadAnswer` (`answer_head` says how), a 4xx or
+    5xx raises `urllib.error.HTTPError`, and a refused URL or header raises
+    `build_request`'s `ValueError` before any connection is opened. No body is read.
+    """
+    # Not covered: the real network seam, as in `fetch_url`. A caller's unit tests
+    # inject a fake in place of this function, so it runs only in a caller's live
+    # end-to-end test. `build_request`, the opener and `answer_head` ARE unit-tested;
+    # only opening the connection is excluded.
+    request = build_request(url, headers, method="HEAD")  # pragma: no cover
+    opener = build_no_follow_opener()  # pragma: no cover
+    return answer_head(
+        lambda: opener.open(request, timeout=timeout)  # pragma: no cover
+    )  # pragma: no cover

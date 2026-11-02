@@ -1,23 +1,23 @@
 """The artwork matcher: name first, year and track count as tiebreakers.
 
-THE CANDIDATE SETS BELOW ARE MODELED ON A REAL REPLY: their qualifiers, years and track
+The candidate sets below are modeled on a real reply: their qualifiers, years and track
 counts are what the iTunes Search API returned for a band with a run of self-titled
 albums, queried as `"<band> <band> (Gold)"`, plus (in `WIDE`) the one entry the
 artist-alone query holds that the narrow one does not. The band's name is an invented
-stand-in, and the ids, the artwork URLs and the day-and-month of each release date are
+stand-in, and the ids, the artwork URLs, and the day-and-month of each release date are
 placeholders. They are the regression
 fixture for the `results[0]` defect: taking the first result with no check that it is
 the album asked for would hand *Fictionals (Gold)* the *Teal Album*'s cover. The album
-actually wanted is ABSENT from the narrow query entirely -- the store calls it plain
-"Fictionals" -- which is why no amount of better ranking on that one query could have found
+actually wanted is absent from the narrow query entirely (the store calls it plain
+"Fictionals"), which is why no amount of better ranking on that one query could have found
 it.
 
-Gating on artist AND year AND track count all matching was measured and rejected: against
-a real library it BROKE more matches that worked than it fixed, because a tag year and a
+Gating on artist and year and track count all matching was measured and rejected: against
+a real library it broke more matches that worked than it fixed, because a tag year and a
 store release year legitimately differ across reissues and regions, and a deluxe edition
 has a different track count.
 `test_a_different_edition_of_the_right_album_is_accepted` below is that lesson as a test:
-a different EDITION of the right album is a fine answer.
+a different edition of the right album is a fine answer.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from pathlib import Path
 from unittest import mock
 
 _TOOL_ROOT = Path(__file__).resolve().parent.parent
-# The pure matcher under test, plus -- for the end-to-end class at the bottom -- the
+# The pure matcher under test, plus (for the end-to-end class at the bottom) the
 # I/O half that calls it and the sibling tool that owns `AlbumRef`.
 sys.path[:0] = [
     str(_TOOL_ROOT / "src"),
@@ -47,8 +47,8 @@ from artwork_match import (  # noqa: E402 - import follows the sys.path bootstra
 )
 
 #: A stack of trailing qualifiers long enough to push any name past the cap on its
-#: own. Each one strips cleanly, so a name wearing it still reduces to its base --
-#: which is what makes an over-cap candidate a MATCH without the cap, not a miss.
+#: own. Each one strips cleanly, so a name wearing it still reduces to its base,
+#: which is what makes an over-cap candidate a match without the cap, not a miss.
 _OVER_CAP = " (Deluxe)" * (_MAX_NAME_CHARS // len(" (Deluxe)") + 1)
 
 
@@ -96,7 +96,7 @@ class NormalizeTest(unittest.TestCase):
     def test_an_ampersand_folds_to_and_before_punctuation_is_dropped(self) -> None:
         # Measured: without this, an exact comparison rejects every candidate for
         # "Peter Bjorn & John" and a correct match turns into a miss. Folding
-        # AFTER stripping punctuation would erase the ampersand entirely and leave
+        # after stripping punctuation would erase the ampersand entirely and leave
         # "peter bjorn john", matching neither spelling the store uses.
         self.assertEqual(
             normalize("Peter Bjorn & John"), normalize("Peter Bjorn and John")
@@ -107,7 +107,7 @@ class NormalizeTest(unittest.TestCase):
 
 
 class PickAlbumTest(unittest.TestCase):
-    """Which candidate, if any, actually IS the album that was asked for."""
+    """Which candidate, if any, actually is the album that was asked for."""
 
     def test_the_right_album_wins_when_the_pool_contains_it(self) -> None:
         chosen = pick_album(
@@ -118,7 +118,7 @@ class PickAlbumTest(unittest.TestCase):
 
     def test_nothing_is_chosen_when_the_right_album_is_absent(self) -> None:
         # The `results[0]` defect in one assertion: results[0] of this set is the Teal
-        # Album, and every member of it is a DIFFERENT Fictionals album.
+        # Album, and every member of it is a different Fictionals album.
         self.assertIsNone(
             pick_album(
                 NARROW,
@@ -130,9 +130,9 @@ class PickAlbumTest(unittest.TestCase):
         )
 
     def test_a_different_edition_of_the_right_album_is_accepted(self) -> None:
-        # Stand Still: only the deluxe edition is listed, with a different year AND a
-        # different track count. It is the same WORK and its art is right, so
-        # rejecting it would trade a correct cover for no cover -- which is what
+        # Stand Still: only the deluxe edition is listed, with a different year and a
+        # different track count. It is the same work and its art is right, so
+        # rejecting it would trade a correct cover for no cover, which is what
         # gating on year and track count did, measured on two real albums.
         candidates = [
             _candidate(
@@ -190,7 +190,7 @@ class PickAlbumTest(unittest.TestCase):
 
     def test_a_release_year_in_non_ascii_decimal_digits_still_matches(self) -> None:
         # The I/O half already reads an Arabic-Indic "٢٠١٩" as 2019 for the
-        # record's fallback year; the matcher compared the same characters as TEXT
+        # record's fallback year; the matcher compared the same characters as text
         # against "2019" and never matched them, so the two halves disagreed about
         # what year a candidate was from. One numeric rule for both.
         candidates = [
@@ -206,8 +206,8 @@ class PickAlbumTest(unittest.TestCase):
     def test_a_renamed_album_is_admitted_when_year_and_track_count_agree(
         self,
     ) -> None:
-        # The store's title shares nothing with the library's -- a different BASE,
-        # not a sibling -- so the name cannot vouch for it and the two facts do.
+        # The store's title shares nothing with the library's (a different base,
+        # not a sibling), so the name cannot vouch for it and the two facts do.
         # A self-titled double album, filed by its nickname "The White Album" in many
         # a library and as plain "The Invented Quartet" in the store.
         candidates = [
@@ -248,7 +248,7 @@ class PickAlbumTest(unittest.TestCase):
     def test_a_sibling_album_is_not_re_admitted_by_matching_facts(self) -> None:
         # Fictionals released the Teal Album and the Black Album in the same year, ten
         # tracks each. Asked for the Black Album when only the Teal is listed: same
-        # base, both qualified, qualifiers differ, so the NAME refuses it -- and the
+        # base, both qualified, qualifiers differ, so the name refuses it, and the
         # year and track count must not let it back in, or an album absent from
         # the results borrows its sibling's cover: the original defect, through a
         # second door.
@@ -328,7 +328,7 @@ class ArtworkUrlOverTheCapturedReplyTest(unittest.TestCase):
 
     `PickAlbumTest` proves the pure half refuses this reply; this proves that the I/O
     half calling it does too, with Music.app's facts handed in the way `album_scan`
-    hands them -- as two optional numbers, not its `AlbumFacts` object, because the
+    hands them: as two optional numbers, not its `AlbumFacts` object, because the
     artwork adapter is a sibling tool and does not import album_stats' type. It
     lives beside the matcher's tests rather than in the aggregator because the fixture
     is the point: this is the reply that would hand *Fictionals (Gold)* the Teal Album's
@@ -345,7 +345,7 @@ class ArtworkUrlOverTheCapturedReplyTest(unittest.TestCase):
         match = artwork_url(ref, year=2026, tracks=10, fetch=lambda _u, _t: body)
         self.assertIsNone(
             match.url,
-            "a cover was returned for an album absent from the results -- this is "
+            "a cover was returned for an album absent from the results; this is "
             "the defect that hands Fictionals (Gold) the Teal Album's art",
         )
 
@@ -355,7 +355,7 @@ class NameLengthCapTest(unittest.TestCase):
 
     The strip is quadratic in the name's length and every candidate's names come from
     the network, so the cap is what keeps a hostile reply from holding the CPU. None
-    of these tests measures time: they pin WHICH strings reach the strip and what the
+    of these tests measures time: they pin which strings reach the strip and what the
     matcher answers, which is what the cap actually changes.
     """
 
@@ -416,7 +416,7 @@ class NameLengthCapTest(unittest.TestCase):
         self.assertLessEqual(longest, _MAX_NAME_CHARS)
 
     def test_a_candidate_over_the_cap_is_skipped_even_when_it_would_win(self) -> None:
-        # Without the cap the long candidate is the STRONGER match: its qualifiers
+        # Without the cap the long candidate is the stronger match: its qualifiers
         # strip to the same base, and it alone agrees on the year. Skipping it is the
         # point, and the plain candidate in the same pool is still chosen.
         pool = [
@@ -440,7 +440,7 @@ class NameLengthCapTest(unittest.TestCase):
 
     def test_a_wanted_name_over_the_cap_matches_nothing(self) -> None:
         # Either wanted name over the cap is answered with None before any candidate
-        # is looked at -- the library's names are input too, and without this a
+        # is looked at: the library's names are input too, and without this a
         # single folder name could hold the CPU as surely as a candidate.
         pool = [
             _candidate("Placeholder Album", "1969", 17, artist="The Invented Quartet")

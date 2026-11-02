@@ -1,10 +1,10 @@
 """Grouped suite: `https_url_or_none`'s security contract over arbitrary input.
 
-`https_url_or_none` carries the `# fuzz-target` marker `fuzz_gate` looks for, and
+`https_url_or_none` carries the `# fuzz-target` marker, and
 `test_fuzz_https_url_or_none` is the property that satisfies it. Anything the rule
 accepts is what a record may carry and what a request may be built from, so the
-property holds every accepted string to the whole contract -- https with a host,
-no userinfo, no space, control or format character -- over arbitrary text and over
+property holds every accepted string to the whole contract (https with a host,
+no userinfo, no space, control or format character) over arbitrary text and over
 URL-shaped strings built from schemes, userinfo, hosts, slashes and backslashes.
 The rule never raises: a string it cannot parse is "no URL".
 """
@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import bounded_fetch  # noqa: E402 - import follows the sys.path bootstrap above
 
-# The fuzz_gate.md determinism convention: a registered profile loaded at import.
+# Determinism convention: a registered Hypothesis profile loaded at import.
 # deadline=None: a wall-clock deadline measures machine load, not correctness.
 settings.register_profile(
     "fuzz_gate_deterministic",

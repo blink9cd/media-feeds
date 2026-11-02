@@ -1,9 +1,9 @@
-"""Grouped suite: the never-raises contract under HOSTILE input.
+"""Grouped suite: the never-raises contract under hostile input.
 
 These tests share one subject: a value that arrives well-formed and is still unusable.
-The parent suite's malformed-payload family covers values that arrive the wrong SHAPE.
+The parent suite's malformed-payload family covers values that arrive the wrong shape.
 
-`fetch` is injected here exactly as it is in the parent suite, so nothing in this file
+`fetch` is injected here just as it is in the parent suite, so nothing in this file
 reaches the network either.
 """
 
@@ -23,12 +23,12 @@ sys.path.insert(0, str(_TOOL_ROOT))
 
 import wikidata_director  # noqa: E402 - import follows the sys.path bootstrap above
 
-# A REGISTERED profile loaded at import time, never an `@settings` decorator on the
+# A registered profile loaded at import time, never an `@settings` decorator on the
 # test itself. A `@given` test snapshots its settings when it is decorated, so a
-# profile loaded later would be a no-op; and `fuzz_gate --explore` re-applies its own
+# profile loaded later would be a no-op; and a longer fuzzing run re-applies its own
 # settings object to each target, which Hypothesis refuses on a function that already
-# carries one. Registered HERE, beside the only property test in this folder, so it
-# holds when this module is imported on its own -- in the parent aggregator it would
+# carries one. Registered here, beside the only property test in this folder, so it
+# holds when this module is imported on its own; in the parent aggregator it would
 # hold only when that happened to be imported first. deadline=None: a per-example
 # wall-clock deadline measures machine load, not correctness, so a busy machine would
 # report a passing property as flaky.
@@ -46,7 +46,7 @@ settings.register_profile(
 settings.load_profile("fuzz_gate_deterministic")
 
 # No URL can carry an unpaired surrogate: `urlencode` encodes to UTF-8, and UTF-8 has no
-# encoding for one. `json.dumps` below escapes it as `\udcff` -- the exact wire form a
+# encoding for one. `json.dumps` below escapes it as `\udcff`, the same wire form a
 # server would send, and a legal JSON escape that `json.loads` decodes straight back.
 _LONE_SURROGATE = "\udcff"
 
@@ -54,7 +54,7 @@ _LONE_SURROGATE = "\udcff"
 def _answering(pages: dict[str, object]) -> wikidata_director.Fetcher:
     """A fetch answering each URL from the first fragment it contains.
 
-    An unmatched URL raises `AssertionError`, which `directors_for` does NOT catch, so a
+    An unmatched URL raises `AssertionError`, which `directors_for` does not catch, so a
     request a test did not expect fails that test instead of passing as a quiet `None`.
     """
 
@@ -76,7 +76,7 @@ class UnencodableValueTest(unittest.TestCase):
     """A value no URL can carry must end the lookup, not escape it as an exception.
 
     Each of the three request URLs is built from a value the module does not control.
-    Built as an ARGUMENT to `_api_object`, a URL is evaluated before that function's
+    Built as an argument to `_api_object`, a URL is evaluated before that function's
     `try` is entered, so `urlencode`'s `UnicodeEncodeError` would escape
     `directors_for` even though its exception family is caught one frame further in.
     """
@@ -104,13 +104,13 @@ class UnencodableValueTest(unittest.TestCase):
     def test_one_unusable_director_QID_drops_the_whole_credit_not_just_that_name(
         self,
     ) -> None:
-        # `labels_url` carries every director in ONE request, so a single unusable QID
-        # abandons it and the answer is None -- not the other director alone. That is
+        # `labels_url` carries every director in one request, so a single unusable QID
+        # abandons it and the answer is None, not the other director alone. That is
         # the conservative reading, chosen on purpose: Q2 arrived in the same claims
         # payload that just proved corrupt, so it is no better attested than the value
         # beside it, and `labels_url` records a half-correct credit as worse than
         # none. `_director_names` does keep the rest when one director is merely
-        # UNLABELED, but that is a gap in a well-formed response, not a corrupt one.
+        # unlabeled, but that is a gap in a well-formed response, not a corrupt one.
         # Filtering the bad QID out instead would request Q2's label below and return
         # it, which this pins against.
         fetch = _answering(
@@ -128,12 +128,12 @@ class UnencodableValueTest(unittest.TestCase):
 
 
 # The three requests, by the `action` each URL carries. `urlencode` escapes `=` inside a
-# parameter VALUE, so no hostile id can forge this key -- the lookup below is exact.
+# parameter value, so no hostile id can forge this key; the lookup below is exact.
 _ACTIONS = ("query", "wbgetclaims", "wbgetentities")
 
 _SURROGATES = tuple(map(chr, range(0xD800, 0xE000)))
 
-# A string no URL can carry, BY CONSTRUCTION: arbitrary text either side of one
+# A string no URL can carry, by construction: arbitrary text either side of one
 # guaranteed unpaired surrogate. Hypothesis's default `st.text()` draws no surrogates at
 # all, so a plain `st.text()` arm can never reach a URL builder's raise, however long
 # it runs.
@@ -162,7 +162,7 @@ _json_values = st.recursive(
     max_leaves=4,
 )
 
-# An id slot holds a REAL-shaped QID often enough to keep the next stage reachable: a
+# An id slot holds a real-shaped QID often enough to keep the next stage reachable: a
 # value that stops the lookup at the claims request can never exercise the labels URL.
 _id_value = st.one_of(
     st.integers(min_value=1, max_value=10**8).map(lambda n: f"Q{n}"),
@@ -173,7 +173,7 @@ _id_value = st.one_of(
 
 @st.composite
 def _decodable_pages(draw: st.DrawFn) -> dict[str, bytes]:
-    """One well-formed response per request, with hostile VALUES in every value slot.
+    """One well-formed response per request, with hostile values in every value slot.
 
     Per request rather than one body for all three: the lookup makes three requests of
     three different shapes, and a single shared body reaches the labels stage only if it
@@ -197,23 +197,23 @@ def _decodable_pages(draw: st.DrawFn) -> dict[str, bytes]:
 
 
 # Arbitrary bytes as the body of every request: the arm that covers a response that is
-# not JSON at all -- the decoder's own failure family.
+# not JSON at all: the decoder's own failure family.
 _same_bytes_everywhere = st.binary(max_size=512).map(
     lambda body: dict.fromkeys(_ACTIONS, body)
 )
 
 
 class NeverRaisesPropertyTest(unittest.TestCase):
-    """The never-raises contract over the input SPACE, not just the paths.
+    """The never-raises contract over the input space, beyond the paths.
 
     One `st.binary()` body for all three requests is not enough: arbitrary bytes
-    essentially never decode to JSON, so every branch past `json.loads` -- all three URL
-    builders among them -- sits outside its input space, and the raise the tests above
+    essentially never decode to JSON, so every branch past `json.loads` (all three URL
+    builders among them) sits outside its input space, and the raise the tests above
     pin passes a green fuzz gate at full branch coverage. The byte arm stays for what it
     does cover; the decoded arm is what reaches the rest.
 
     Measured, not assumed, before the id guard in `directors_for` existed: with each URL
-    site built outside `_api_object`'s `try` ON ITS OWN, this property alone, run as a
+    site built outside `_api_object`'s `try` on its own, this property alone, run as a
     fresh randomized 200-example campaign per trial, caught every site 10 times out of
     10, and the derandomized suite route caught all three. The byte-only strategy, run
     the same way against all three sites at once, caught it 0 times in 10. The guard

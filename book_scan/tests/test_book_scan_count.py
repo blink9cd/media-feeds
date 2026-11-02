@@ -21,6 +21,7 @@ _TOOL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_TOOL_ROOT))
 sys.path.insert(0, str(_TOOL_ROOT.parent / "feed_read"))
 
+from _book_scan_offline import offline_main  # noqa: E402 - follows the sys.path bootstrap above
 import book_scan  # noqa: E402 - import follows the sys.path bootstrap above
 import feed_read  # noqa: E402 - import follows the sys.path bootstrap above
 
@@ -63,15 +64,15 @@ def _explode_fetch(url: str, timeout: float) -> bytes:
 def _exit_code(extra_args: list[str], fetch: feed_read.Fetcher) -> int:
     """`main`'s exit code for a fixed --user-id, whether returned or raised.
 
-    An option value argparse rejects raises `SystemExit` rather than returning --
-    the same path the real `if __name__ == "__main__":` entry point relies on --
+    An option value argparse rejects raises `SystemExit` rather than returning
+    (the same path the real `if __name__ == "__main__":` entry point relies on),
     so this normalizes both outcomes into the plain int every other CLI test in
     this suite already compares against. Both streams are discarded: a usage
     error prints to stderr, and nothing here reads either.
     """
     try:
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            return book_scan.main(["--user-id", _A_USER_ID, *extra_args], fetch=fetch)
+            return offline_main(["--user-id", _A_USER_ID, *extra_args], fetch=fetch)
     except SystemExit as exc:
         code = exc.code
         # argparse's own usage-error exit always passes an int status
@@ -113,10 +114,10 @@ class CountOptionTest(unittest.TestCase):
         self.assertIsInstance(json.loads(out.read_text(encoding="utf-8")), list)
 
     def test_a_valid_explicit_count_selects_that_many_books(self) -> None:
-        # Exercises `positive_int`'s SUCCESS path end to end through the parser:
+        # Exercises `positive_int`'s success path end to end through the parser:
         # every case above only ever reaches its ArgumentTypeError branch, so
         # this is what proves a well-formed --count value actually reaches
-        # `main` and `newest_books`, not just that a bad one is refused.
+        # `main` and `newest_books`, as well as that a bad one is refused.
         out = self.root / "books.json"
         self.assertEqual(self._run(["--count", "3", "--output", str(out)]), 0)
         records = json.loads(out.read_text(encoding="utf-8"))
@@ -125,7 +126,7 @@ class CountOptionTest(unittest.TestCase):
     def test_a_count_of_one_selects_exactly_one_book_from_a_longer_shelf(self) -> None:
         # `positive_int`'s boundary, end to end. The fixture holds more than one
         # book, so a `--count 1` that was refused (exit 2) or that fell through as
-        # None (every book written) both fail HERE -- the --count 3 case above
+        # None (every book written) both fail here; the --count 3 case above
         # cannot tell either apart from a correct run.
         out = self.root / "books.json"
         self.assertEqual(self._run(["--count", "1", "--output", str(out)]), 0)
@@ -133,10 +134,36 @@ class CountOptionTest(unittest.TestCase):
         self.assertEqual(len(records), 1)
 
 
+class UndatedPickTest(unittest.TestCase):
+    """`pick_newest` with records whose read date is None (the widget's)."""
+
+    def test_a_dated_record_ranks_first_and_the_undated_keep_their_order(self) -> None:
+        def record(title: str, read: str | None) -> book_scan.Candidate:
+            return (
+                book_scan.BookRecord(
+                    title=title,
+                    author="An Author",
+                    year=None,
+                    rating=None,
+                    read=read,
+                    cover=None,
+                ),
+                "",
+            )
+
+        given = [record("Undated one", None), record("Dated", "2026-01-01")]
+        given.append(record("Undated two", None))
+        chosen = book_scan.pick_newest(given, 3)
+        self.assertEqual(
+            [pair[0]["title"] for pair in chosen],
+            ["Dated", "Undated one", "Undated two"],
+        )
+
+
 class PositiveOptionsTest(unittest.TestCase):
     """`--cover-width` and `--window` share --count's floor of one.
 
-    Refused by argparse, at exit 2, BEFORE any fetch: otherwise a zero cover width
+    Refused by argparse, at exit 2, before any fetch: otherwise a zero cover width
     crashes inside `cover_at_width` after the feed has already been fetched, and a
     zero window reaches the vendor as `per_page=0`.
     """

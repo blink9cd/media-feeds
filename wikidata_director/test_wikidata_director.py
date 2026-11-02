@@ -1,8 +1,8 @@
 """Unit tests for the keyless Wikidata director lookup, plus the tests/ aggregator.
 
-Every test here drives an INJECTED `fetch`: no unit test reaches the network. The
-fake is keyed on a URL fragment rather than on call ORDER, so a test fails loudly if
-the module ever asks for a URL it did not expect -- call-order keying would silently
+Every test here drives an injected `fetch`: no unit test reaches the network. The
+fake is keyed on a URL fragment rather than on call order, so a test fails loudly if
+the module ever asks for a URL it did not expect; call-order keying would silently
 accept a reordered or dropped request.
 
 The malformed-payload family below is not defensive padding. Wikidata's JSON is
@@ -10,14 +10,14 @@ third-party, untrusted, structured input arriving over the network: every level 
 (`query`, `search`, `claims`, `mainsnak`, `datavalue`, `labels`) can be absent or the
 wrong type on an error page, a maintenance response, or a future schema change, and
 `directors_for`'s whole contract is that none of those raises. Values that arrive
-well-formed and are still unusable -- and `test_fuzz_directors_for`, which proves the
-contract over the input space rather than over these hand-picked paths -- live in
+well-formed and are still unusable, and `test_fuzz_directors_for`, which proves the
+contract over the input space rather than over these hand-picked paths, live in
 `tests/test_never_raises.py`.
 
 `load_tests` at the bottom folds in the grouped `tests/` suite, which is what makes the
 live-boundary and CLI suites part of the real run and part of this folder's one
-coverage unit -- `python_gate` prunes a `tests/` dir from its own walk and reports it
-as SKIPPED unless this aggregator reaches it.
+coverage unit: a coverage run that prunes a `tests/` dir from its own walk reports it
+as skipped unless this aggregator reaches it.
 """
 
 from __future__ import annotations
@@ -47,16 +47,16 @@ _MIN_TESTS_BY_FILE: dict[str, int] = {
     "test_wikidata_director_cli.py": 9,
     # Always at least 1: the live-boundary class is loaded (and counted) regardless of
     # whether WIKIDATA_DIRECTOR_OFFLINE, or an unreachable service, later skips it at
-    # RUN time -- discovery happens before either skip decision.
+    # run time: discovery happens before either skip decision.
     "test_live_wikidata.py": 1,
     "test_label_batch_limit.py": 4,
     "test_never_raises.py": 4,
     "test_tmdb_id_guard.py": 4,
 }
-# This module's OWN tests, kept apart from the grouped floors rather than summed into one
+# This module's own tests, kept apart from the grouped floors rather than summed into one
 # total: a combined number carries grouped growth as slack, and a deleted test here would
-# vanish inside it. Restated rather than counted off the classes below -- an introspected
-# count falls by one with the deletion it exists to catch -- and EXACT rather than a floor,
+# vanish inside it. Restated rather than counted off the classes below (an introspected
+# count falls by one with the deletion it exists to catch), and exact rather than a floor,
 # since under ``>=`` each added test becomes room a later deletion can hide in. Adding or
 # removing a test in this module means changing this number.
 _OWN_GUARD_TESTS = 27
@@ -76,7 +76,7 @@ _UNKRICH_QID = "Q3772"
 def _fake_fetch(pages: dict[str, object]) -> Fetcher:
     """A `fetch` that answers each URL from the first fragment it contains.
 
-    An unmatched URL raises `AssertionError`, which `directors_for` does NOT catch --
+    An unmatched URL raises `AssertionError`, which `directors_for` does not catch,
     so an unexpected request surfaces as a test error rather than as a quiet `None`.
     """
 
@@ -134,7 +134,7 @@ class DirectorsForTest(unittest.TestCase):
         )
 
     def test_the_join_does_not_reuse_the_cards_own_separator(self) -> None:
-        # The card separates its FIELDS with a middle dot, so a co-directed film
+        # The card separates its fields with a middle dot, so a co-directed film
         # joined with one would read as two separate card fields.
         self.assertNotIn("·", wikidata_director.DIRECTOR_SEPARATOR)
 
@@ -240,7 +240,7 @@ class DirectorsForTest(unittest.TestCase):
     def test_an_unavailable_service_is_no_director_not_an_error(self) -> None:
         # 429 is the one measured in the field: WDQS rate-limited to 1 req/min during
         # a declared outage. 503 is the same class. Neither may reach the caller as an
-        # exception -- a missing director is a normal outcome.
+        # exception: a missing director is a normal outcome.
         for status in (429, 503):
             with self.subTest(status=status):
 
@@ -359,8 +359,8 @@ class UrlBuildingTest(unittest.TestCase):
         self.assertIn("languages=en", url)
 
     def test_the_labels_url_asks_for_the_language_fallback(self) -> None:
-        # MEASURED, not defensive: without the fallback, The Matrix resolved to
-        # "Lilly Wachowski" ALONE -- see `labels_url`.
+        # Measured, not defensive: without the fallback, The Matrix resolved to
+        # "Lilly Wachowski" alone; see `labels_url`.
         self.assertIn("languagefallback=1", wikidata_director.labels_url(["Q1"]))
 
     def test_every_url_asks_for_json(self) -> None:
@@ -410,12 +410,12 @@ def _tests_by_module(suite: unittest.TestSuite) -> dict[str, int]:
 
 
 class GroupedSuiteDiscoveryTest(unittest.TestCase):
-    """Fail loudly when THIS MODULE's real test load is missing a grouped suite.
+    """Fail loudly when this module's real test load is missing a grouped suite.
 
-    Deliberately loads the module the way `python_gate` does, rather than calling
-    `_grouped_suite()` directly: a guard that called the helper would share its
-    subject's failure mode, staying green after `load_tests` was deleted -- which is
-    exactly the change that silently stops every suite under `tests/` from running.
+    Deliberately loads the module the way a bare run or a coverage runner does, rather
+    than calling `_grouped_suite()` directly: a guard that called the helper would share its
+    subject's failure mode, staying green after `load_tests` was deleted, which is
+    the very change that silently stops every suite under `tests/` from running.
     """
 
     def test_module_load_includes_the_grouped_suites(self) -> None:
@@ -427,7 +427,7 @@ class GroupedSuiteDiscoveryTest(unittest.TestCase):
             own_found,
             _OWN_GUARD_TESTS,
             f"this module contributed {own_found} of its own tests, expected exactly "
-            f"{_OWN_GUARD_TESTS} -- a guard above may have been deleted, or a new one "
+            f"{_OWN_GUARD_TESTS}: a guard above may have been deleted, or a new one "
             f"added without raising _OWN_GUARD_TESTS",
         )
         # Derived from the per-file floors rather than restated as a second total: that
@@ -439,13 +439,13 @@ class GroupedSuiteDiscoveryTest(unittest.TestCase):
             grouped_found,
             grouped_floor,
             f"loading this module yielded {grouped_found} grouped tests, expected at "
-            f"least {grouped_floor} -- load_tests may have been removed or renamed, "
+            f"least {grouped_floor}: load_tests may have been removed or renamed, "
             f"silently dropping a tests/ suite from the real run",
         )
 
     def test_grouped_suite_meets_its_own_per_file_floor(self) -> None:
         found_by_file = _tests_by_module(_grouped_suite())
-        # The FULL key set both ways: a new tests/test_*.py with no floor entry would
+        # The full key set both ways: a new tests/test_*.py with no floor entry would
         # otherwise be silently unfloored, and a mapped file that no longer exists
         # would leave a floor nothing measures.
         self.assertEqual(

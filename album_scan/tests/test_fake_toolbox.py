@@ -1,7 +1,7 @@
-"""The Music.app arms of `main`, driven through a FAKE apple-music-toolbox on disk.
+"""The Music.app arms of `main`, driven through a fake apple-music-toolbox on disk.
 
 The suites marked `needs_toolbox` drive the real toolbox's own parsing of a faked
-`osascript` reply, so they skip wherever the toolbox is not installed -- a standalone
+`osascript` reply, so they skip wherever the toolbox is not installed, a standalone
 clone of this project among them. The arms they alone would reach still have to run
 there: Music.app reporting no album at all, and Music.app's facts reaching the artwork
 matcher as its tiebreakers. These cases write a stand-in toolbox into a temporary
@@ -10,7 +10,7 @@ it, so the whole locate-import-call path runs for real with no toolbox installed
 
 The stand-in's modules take the real ones' import names, so each case lifts any
 already-imported `recently_added` / `album_stats` out of `sys.modules` and puts them
-back afterwards, and restores `sys.path`: a later suite driving the real toolbox must
+back afterward, and restores `sys.path`: a later suite driving the real toolbox must
 never be handed a stand-in. Nothing here spawns `osascript` or reaches the network.
 """
 
@@ -83,7 +83,7 @@ Fetch = Callable[[str, float], bytes]
 #: One album, by the names the store result below carries for its artist.
 _NEWEST = [("An Artist", "A Record", "2026-08-20")]
 
-#: A store result whose NAME is not the album's: only Music.app's year AND track count
+#: A store result whose name is not the album's: only Music.app's year and track count
 #: agreeing with it can admit it (`pick_album`'s second door).
 _RENAMED_RESULT = {
     "artistName": "An Artist",
@@ -137,7 +137,7 @@ class _FakeToolboxCase(unittest.TestCase):
         saved_path = list(sys.path)
         self.addCleanup(sys.path.__setitem__, slice(None), saved_path)
         # A real toolbox's folders an earlier suite put on sys.path would be found
-        # ahead of the stand-in's, which `import_toolbox` APPENDS: set them aside too.
+        # ahead of the stand-in's, which `import_toolbox` appends: set them aside too.
         sys.path[:] = [
             entry for entry in saved_path if not _holds_toolbox_module(entry)
         ]

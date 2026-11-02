@@ -1,15 +1,15 @@
-"""The exact shape of the record this tool emits -- the producer half of the contract.
+"""The shape of the record this tool emits: the producer half of the contract.
 
-THIS TEST IS LOAD-BEARING. DO NOT DELETE IT AS "asserting the obvious".
+This test is load-bearing. Do not delete it as "asserting the obvious".
 
 The record's consumer reads it from a file and is type-checked separately, so no type
 checker ever sees the producer and the consumer together. This test stands where that
 check would: rename a key here and it fails loudly, in the project that did the
 renaming, instead of silently rendering a broken card somewhere else.
 
-Renaming or removing a key is breaking, and that is what these assertions catch. ADDING
+Renaming or removing a key is breaking, and that is what these assertions catch. Adding
 one is not breaking for a consumer that reads named keys off a plain dict and ignores
-the rest -- but it still fails here, because the assertions below are exact-equality
+the rest, but it still fails here, because the assertions below are exact-equality
 against `_CONTRACT_KEYS`. That is deliberate: a key added to the record changes what a
 consumer can render, so it should cost one considered edit to the list below rather
 than sliding in unnoticed. Update `_CONTRACT_KEYS` when you mean to; do not loosen the
@@ -32,9 +32,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # for _seams beside th
 
 from _seams import no_music, no_store  # noqa: E402 - import follows the sys.path bootstrap above
 
-# AlbumRef comes from album_scan, which re-exports it, NOT from cover_art directly:
+# AlbumRef comes from album_scan, which re-exports it, not from cover_art directly:
 # album_scan's own bootstrap is what puts cover_art on sys.path, and ruff's isort would
-# sort a bare `from cover_art import ...` ABOVE the line that makes it importable.
+# sort a bare `from cover_art import ...` above the line that makes it importable.
 # tests/test_record.py imports it the same way.
 from album_scan import (  # noqa: E402 - follows the bootstrap
     AlbumFacts,
@@ -97,15 +97,15 @@ class RecordContractTest(unittest.TestCase):
         self.assertIsNone(album_record(_A_REF, None)["favorite_signal"])
 
     def test_an_absent_year_stays_null_and_never_becomes_the_text_None(self) -> None:
-        # THE trap in publishing the year as text. A bare str() over the optional
+        # The trap in publishing the year as text. A bare str() over the optional
         # turns a genuine absence into the four-character string "None", which is
         # truthy, would publish as "None" in the JSON, and would render as the word
-        # None on the card -- a fabricated fact where the record means "not known".
+        # None on the card: a fabricated fact where the record means "not known".
         self.assertIsNone(album_record(_A_REF, None)["year"])
 
     def test_artwork_is_a_string_or_none_and_none_is_legitimate(self) -> None:
         # Asserting `str` alone here would wrongly reject a record for an album whose
-        # cover could not be resolved -- a normal outcome, not an error, since a
+        # cover could not be resolved, a normal outcome, not an error, since a
         # consumer must read correctly with no image at all.
         self.assertIsNone(album_record(_A_REF, None)["artwork"])
         self.assertIsInstance(
@@ -133,9 +133,9 @@ class RecordContractTest(unittest.TestCase):
         #
         # The two raising seams are what keep this off the real Music.app and the
         # store; the flags only choose the arms. --source folder governs where the
-        # album LIST comes from, and --no-favorites skips the counts query, which
+        # album list comes from, and --no-favorites skips the counts query, which
         # mirrors the unit assertions above: they (the year test aside) pass no
-        # facts, and the key set -- this test's whole subject -- is identical
+        # facts, and the key set (this test's whole subject) is identical
         # either way.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -158,7 +158,7 @@ class RecordContractTest(unittest.TestCase):
                     run=no_music,
                 )
             self.assertEqual(code, 0)
-            # Always a JSON array, even at the default --count of one -- the
+            # Always a JSON array, even at the default --count of one: the
             # written record is element [0], not the raw parse.
             written = json.loads(out.read_text(encoding="utf-8"))
             self.assertEqual(set(written[0]), _CONTRACT_KEYS)

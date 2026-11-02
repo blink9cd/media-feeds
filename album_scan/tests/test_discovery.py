@@ -12,6 +12,7 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for _seams beside this file
@@ -20,7 +21,7 @@ from _seams import posix_filesystem_only  # noqa: E402 - import follows the sys.
 from album_scan import AlbumRef  # noqa: E402 - import follows the sys.path bootstrap above
 
 # folder_scan is album_scan's private src/ module. Importing album_scan above ran
-# its sys.path bootstrap as a side effect, which is what puts src/ on sys.path -- the
+# its sys.path bootstrap as a side effect, which is what puts src/ on sys.path, the
 # same way tests/test_live_music.py reaches recently_added. Imported directly (not
 # through album_scan's re-export) because test_each_album_is_stat_ed_once below
 # monkeypatches folder_scan._birth_time, a private name album_scan has no reason to
@@ -57,7 +58,7 @@ class NewestAlbumTest(unittest.TestCase):
             folder_scan.newest_albums(self.root / "does-not-exist", 1)
 
     def test_the_missing_library_root_message_omits_the_absolute_path(self) -> None:
-        # Nothing this tool writes -- including an error message -- may carry a
+        # Nothing this tool writes, an error message included, may carry a
         # filesystem path. src/folder_scan.py deliberately raises with
         # `library_root.name`, never the full `library_root`; this pins that choice so
         # a refactor to an f-string embedding the whole Path would fail here instead
@@ -72,7 +73,7 @@ class NewestAlbumTest(unittest.TestCase):
     def test_an_unreadable_library_root_is_named_without_its_path(self) -> None:
         # A root that exists but cannot be listed is the same operator error as a
         # missing one, and the PermissionError the listing raises carries the whole
-        # path in its own text -- so it is re-raised naming the folder alone, as the
+        # path in its own text, so it is re-raised naming the folder alone, as the
         # missing-root case above does.
         locked = self.root / "locked"
         locked.mkdir()
@@ -102,7 +103,7 @@ class NewestAlbumTest(unittest.TestCase):
 
     def test_a_loose_file_at_album_level_is_not_an_album(self) -> None:
         # "AAA_stray.mp3" sorts before "Real Record", so the loop must reject the
-        # stray file and continue on to the real album directory that follows it --
+        # stray file and continue on to the real album directory that follows it,
         # the only way to exercise the loop-continues branch after a rejected entry.
         make_album(self.root, "Artist", "Real Record", added=1_000_000)
         (self.root / "Artist" / "AAA_stray.mp3").write_bytes(b"")
@@ -140,7 +141,7 @@ class NewestAlbumTest(unittest.TestCase):
     @unittest.skipIf(_IS_ROOT, "root can list a mode-000 directory")
     def test_an_unreadable_artist_folder_is_skipped_and_the_scan_goes_on(self) -> None:
         # "Locked" sorts before "Readable", so the scan has to pass over the folder it
-        # cannot list and carry on to the album behind it -- one unreadable folder
+        # cannot list and carry on to the album behind it: one unreadable folder
         # costs the scan one entry, not the whole refresh.
         self._lock_artist_folder("Locked")
         make_album(self.root, "Readable", "Record", added=1_000_000)
@@ -150,7 +151,7 @@ class NewestAlbumTest(unittest.TestCase):
     @posix_filesystem_only
     @unittest.skipIf(_IS_ROOT, "root can list a mode-000 directory")
     def test_an_unreadable_artist_folder_is_reported_by_name_to_on_skip(self) -> None:
-        # By NAME, never a path: whatever the caller prints from this must obey the
+        # By name, never a path: whatever the caller prints from this must obey the
         # same rule the missing-root message does.
         self._lock_artist_folder("Locked")
         make_album(self.root, "Readable", "Record", added=1_000_000)
@@ -161,14 +162,23 @@ class NewestAlbumTest(unittest.TestCase):
     def test_two_albums_added_the_same_day_rank_by_time_of_day(self) -> None:
         """Music.app ranks by its full "date added"; the folder scan must not lose
         that precision to a calendar date. "A Artist" sorts first by name, so a
-        ranking on the date alone -- a tie, which the stable sort resolves in
-        `library_walk.album_dirs`' name order -- would pick it: the wrong answer, since
+        ranking on the date alone (a tie, which the stable sort resolves in
+        `library_walk.album_dirs`' name order) would pick it: the wrong answer, since
         "B Artist" was added an hour later the same day.
         """
-        noon = dt.datetime(2026, 1, 15, 12, 0).timestamp()
-        make_album(self.root, "A Artist", "Record", added=noon)
-        make_album(self.root, "B Artist", "Record", added=noon + 3600)
-        found = folder_scan.newest_albums(self.root, 1)
+        noon = dt.datetime(2026, 1, 15, 12, 0)
+        born = {"A Artist": noon, "B Artist": noon + dt.timedelta(hours=1)}
+        for artist, added in born.items():
+            make_album(self.root, artist, "Record", added=added.timestamp())
+        # The two times go in through `_birth_time`, the stamp the ranking reads,
+        # rather than through `make_album`'s `os.utime` alone: on Windows that
+        # stamp is the folder's creation time, which `os.utime` cannot set, and two
+        # folders made back to back there can share one creation time to the
+        # clock's resolution, which is the very tie this case must not have.
+        with mock.patch.object(
+            folder_scan, "_birth_time", lambda path: born[path.parent.name]
+        ):
+            found = folder_scan.newest_albums(self.root, 1)
         self.assertEqual(found[0].artist, "B Artist")
 
     def test_added_is_a_date_not_a_timestamp(self) -> None:

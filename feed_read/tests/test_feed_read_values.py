@@ -24,9 +24,9 @@ class TestTerminalSafeText(unittest.TestCase):
         self.assertEqual(feed_read.terminal_safe_text("a\x1bb"), "a\\x1bb")
 
     def test_the_c1_block_a_feed_can_actually_carry_is_escaped(self) -> None:
-        # MEASURED 2026-09-22: expat refuses a raw C0 character outright, and
+        # Measured 2026-09-22: expat refuses a raw C0 character outright, and
         # refuses `&#27;` too ("reference to invalid character number"), so ESC
-        # cannot reach a title through the feed at all. C1 CAN: XML 1.0 admits
+        # cannot reach a title through the feed at all. C1 can: XML 1.0 admits
         # U+0080-U+009F unescaped, and both the raw character and `&#155;` parse.
         # U+009B is the control sequence introducer and U+0085 a line break, so
         # these are the two this half of the rule actually removes.
@@ -39,8 +39,8 @@ class TestTerminalSafeText(unittest.TestCase):
         self.assertEqual(feed_read.terminal_safe_text("a\tb\nc"), "a\\x09b\\x0ac")
 
     def test_ordinary_text_including_non_ascii_is_untouched(self) -> None:
-        # The rule is about CONTROL characters, not about non-ASCII: a title with
-        # accents, CJK or an emoji is ordinary text and must print as itself.
+        # The rule is about control characters, not about non-ASCII: a title with
+        # accents, CJK, or an emoji is ordinary text and must print as itself.
         for value in ("Amélie", "東京物語", "A Film \U0001f3ac"):
             with self.subTest(value=value):
                 self.assertEqual(feed_read.terminal_safe_text(value), value)
@@ -59,9 +59,9 @@ class TestRfc822Date(unittest.TestCase):
         )
 
     def test_a_SINGLE_digit_day_parses(self) -> None:
-        # MEASURED on a real feed, 2026-08-31: Goodreads writes a single-digit day
-        # with NO leading zero (4 of 49 items). This pins the real feed's shape; it is
-        # NOT why parsedate_to_datetime is used over strptime, whose `%d` accepts an
+        # Measured on a real feed, 2026-08-31: Goodreads writes a single-digit day
+        # with no leading zero (4 of 49 items). This pins the real feed's shape; it is
+        # not why parsedate_to_datetime is used over strptime, whose `%d` accepts an
         # unpadded day too. test_a_date_with_no_weekday_parses below is a form that
         # genuinely differentiates the two.
         self.assertEqual(
@@ -71,8 +71,8 @@ class TestRfc822Date(unittest.TestCase):
 
     def test_a_date_with_no_weekday_parses(self) -> None:
         # RFC-822/2822 makes the leading day-of-week optional. strptime("%a, %d %b %Y
-        # %H:%M:%S %z") CANNOT handle this -- its literal "%a, " prefix has nothing to
-        # match -- while parsedate_to_datetime, which implements the grammar rather
+        # %H:%M:%S %z") cannot handle this (its literal "%a, " prefix has nothing to
+        # match), while parsedate_to_datetime, which implements the grammar rather
         # than one fixed template, accepts it.
         self.assertEqual(
             feed_read.rfc822_date("1 Aug 2026 00:00:00 +0000"),

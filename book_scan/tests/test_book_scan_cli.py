@@ -1,7 +1,7 @@
 """The CLI's exit codes and output, driven end to end with an injected fetch.
 
 Every test injects `fetch` or `--feed-file` and points `--output` at a
-`tempfile.TemporaryDirectory()` -- no unit test reaches the network.
+`tempfile.TemporaryDirectory()`, so no unit test reaches the network.
 `tests/test_book_scan_live_feed.py` is the one file in this suite that reaches the
 real boundary, and only when explicitly asked to (see that file's module docstring).
 
@@ -27,6 +27,7 @@ sys.path.insert(0, str(_TOOL_ROOT))
 sys.path.insert(0, str(_TOOL_ROOT.parent / "feed_read"))
 
 import book_scan  # noqa: E402 - import follows the sys.path bootstrap above
+from _book_scan_offline import offline_main  # noqa: E402 - follows the sys.path bootstrap above
 import feed_read  # noqa: E402 - import follows the sys.path bootstrap above
 import help_formatter  # noqa: E402 - reachable only via book_scan's bootstrap
 
@@ -40,17 +41,17 @@ _NO_BOOK_FEED = (
 )
 
 # Deliberately not well-formed XML (an unterminated tag), so feed_read.feed_items
-# raises ValueError -- the "fetch returned garbage" case, distinct from _NO_BOOK_FEED
+# raises ValueError: the "fetch returned garbage" case, distinct from _NO_BOOK_FEED
 # above (well-formed XML with no dateable book) and from an OSError (the fetch itself
 # failed).
 _MALFORMED_XML = b"<rss><channel><item>unterminated"
 
 # A placeholder Goodreads user id chosen to look nothing like a real one and to be
-# easy to spot if a message under test ever echoes it back -- see book_scan.md, "No
+# easy to spot if a message under test ever echoes it back; see book_scan.md, "No
 # message ever names the user id or the key".
 _A_USER_ID = "a-placeholder-user-id"
 
-# A placeholder API key, same reasoning as _A_USER_ID above -- --key is a runtime
+# A placeholder API key, same reasoning as _A_USER_ID above: --key is a runtime
 # argument that must never appear in a message either.
 _A_KEY = "a-placeholder-api-key"
 
@@ -68,7 +69,7 @@ def _fetch_returning(body: bytes) -> feed_read.Fetcher:
 def _capturing_fetch(body: bytes) -> tuple[feed_read.Fetcher, list[str]]:
     """A fake `fetch` that records every URL it was called with and returns `body`.
 
-    The URL is what actually reached the network seam -- the only way to prove `--key`
+    The URL is what actually reached the network seam, the only way to prove `--key`
     and `--window` reached the built URL rather than merely that `feed_url` computes
     them correctly in isolation (`FeedUrlTest` below already covers that).
     """
@@ -101,7 +102,7 @@ class FeedUrlTest(unittest.TestCase):
     def test_key_is_omitted_entirely_when_absent_not_sent_empty(self) -> None:
         # Verified 2026-08-31: a deliberately bogus key returned byte-identical
         # output to no key at all, so `--key` is optional and, when absent, `key`
-        # must not appear in the URL AT ALL -- not as an empty `key=`, which would
+        # must not appear in the URL at all, not even as an empty `key=`, which would
         # misrepresent that measured behavior. This is the test that stops it
         # silently becoming required again.
         url = book_scan.feed_url("42", "read", 50, None)
@@ -113,8 +114,8 @@ class FeedUrlTest(unittest.TestCase):
         self.assertIn(f"key={_A_KEY}", url)
 
     def test_window_reaches_the_url_as_per_page(self) -> None:
-        # A window WIDER than the card count is what makes the date-read re-sort
-        # correct -- assert the built URL actually carries the value given, not a
+        # A window wider than the card count is what makes the date-read re-sort
+        # correct, so assert the built URL actually carries the value given, not a
         # hardcoded 50.
         url = book_scan.feed_url("42", "read", 99, None)
         self.assertIn("per_page=99", url)
@@ -126,7 +127,7 @@ class FeedUrlTest(unittest.TestCase):
     def test_it_percent_encodes_a_user_id_with_a_slash_and_a_question_mark(
         self,
     ) -> None:
-        # A raw "/" would add a path segment; a raw "?" would start a query string --
+        # A raw "/" would add a path segment; a raw "?" would start a query string;
         # either reshapes the URL entirely. Percent-encoding is what stops that.
         url = book_scan.feed_url("a/b?c", "read", 50, None)
         self.assertEqual(
@@ -180,13 +181,26 @@ class ParserShapeTest(unittest.TestCase):
         self.assertIn("Run order", text)
         self.assertIn("Exit codes", text)
 
+    def test_help_lists_take_a_serial_comma(self) -> None:
+        text = " ".join(book_scan.build_parser().format_help().split())
+        for phrase in ("rss, or both,", "unreadable, or malformed"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
+
     def test_the_parser_uses_the_shared_formatter(self) -> None:
         # Pinned as a binding, not a rendering: the gate's interpreter already drops
         # the bogus "(default: None)" on a required option, so a --help assertion
         # would pass with the stock formatter back in place ("The version trap" in
         # help_formatter.md). The floor is 3.12, below that fix.
         formatter_class = book_scan.build_parser().formatter_class
-        self.assertIs(formatter_class, help_formatter.ReqAwareDefaultsFormatter)
+        self.assertIs(formatter_class, help_formatter.UnsetHidingFormatter)
+
+    def test_help_shows_no_unset_default(self) -> None:
+        # An option left out holds None, which is no value a person could type, so
+        # "(default: None)" would say nothing true; each such option's help says what
+        # leaving it out means instead. This half renders on every interpreter.
+        text = book_scan.build_parser().format_help()
+        self.assertNotIn("(default: None)", text)
 
 
 class CliTest(unittest.TestCase):
@@ -195,16 +209,19 @@ class CliTest(unittest.TestCase):
         self.root = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
         # BOOK_SCAN_KEY must never leak in from the real environment a test happens
-        # to run in, and must never leak OUT to a later test either -- every test
+        # to run in, and must never leak out to a later test either: every test
         # that cares about it sets/clears it explicitly via `patch.dict` instead.
         env_patcher = patch.dict(os.environ, {}, clear=False)
         env_patcher.start()
         os.environ.pop("BOOK_SCAN_KEY", None)
+        # The source settings too, so a shell exporting them cannot reroute an RSS run.
+        os.environ.pop(book_scan.SOURCE_ENV, None)
+        os.environ.pop(book_scan.CSV_DIR_ENV, None)
         self.addCleanup(env_patcher.stop)
 
     def test_cover_width_rewrites_the_recorded_sizing_token(self) -> None:
         out = self.root / "books.json"
-        book_scan.main(
+        offline_main(
             ["--user-id", _A_USER_ID, "--output", str(out), "--cover-width", "250"],
             fetch=_fetch_returning(_FIXTURE),
         )
@@ -212,12 +229,12 @@ class CliTest(unittest.TestCase):
         self.assertIn("._SX250_.", records[0]["cover"])
 
     def test_a_book_with_no_cover_is_written_with_a_null_cover(self) -> None:
-        # The resize step must be SKIPPED, not applied to None. A shelf item with no
+        # The resize step must be skipped, not applied to None. A shelf item with no
         # book_large_image_url degrades to cover: None rather than falling back to an
         # unusable thumbnail (see book_scan.md, "Why book_image_url is not the cover
         # URL"), and that record is correctly shaped, not broken.
         out = self.root / "books.json"
-        code = book_scan.main(
+        code = offline_main(
             ["--user-id", _A_USER_ID, "--output", str(out)],
             fetch=_fetch_returning(
                 re.sub(
@@ -236,7 +253,7 @@ class CliTest(unittest.TestCase):
         # what the page loads an image from: an http: URL is written as no cover,
         # and the resize step is skipped for it as for any other None.
         out = self.root / "books.json"
-        code = book_scan.main(
+        code = offline_main(
             ["--user-id", _A_USER_ID, "--output", str(out)],
             fetch=_fetch_returning(
                 _FIXTURE.replace(
@@ -251,10 +268,10 @@ class CliTest(unittest.TestCase):
 
     def test_the_default_cover_width_leaves_the_feed_token_alone(self) -> None:
         # Deliberate: measured, this cover has no saving to give (see
-        # _DEFAULT_COVER_WIDTH). The default must therefore be a NO-OP on the record,
+        # _DEFAULT_COVER_WIDTH). The default must therefore be a no-op on the record,
         # so adding the option cannot quietly change what is committed.
         out = self.root / "books.json"
-        book_scan.main(
+        offline_main(
             ["--user-id", _A_USER_ID, "--output", str(out)],
             fetch=_fetch_returning(_FIXTURE),
         )
@@ -265,7 +282,7 @@ class CliTest(unittest.TestCase):
         out = self.root / "books.json"
         buffer = io.StringIO()
         with redirect_stdout(buffer):
-            code = book_scan.main(
+            code = offline_main(
                 ["--user-id", _A_USER_ID, "--output", str(out)],
                 fetch=_fetch_returning(_FIXTURE),
             )
@@ -275,7 +292,7 @@ class CliTest(unittest.TestCase):
 
     def test_the_written_record_has_exactly_the_bookrecord_keys(self) -> None:
         out = self.root / "books.json"
-        book_scan.main(
+        offline_main(
             ["--user-id", _A_USER_ID, "--output", str(out)],
             fetch=_fetch_returning(_FIXTURE),
         )
@@ -293,7 +310,7 @@ class CliTest(unittest.TestCase):
 
     def test_the_record_is_written_atomically_no_temp_file_survives(self) -> None:
         out = self.root / "books.json"
-        code = book_scan.main(
+        code = offline_main(
             ["--user-id", _A_USER_ID, "--output", str(out)],
             fetch=_fetch_returning(_FIXTURE),
         )
@@ -311,7 +328,7 @@ class CliTest(unittest.TestCase):
         out = self.root / "books.json"
         stdout, stderr = io.StringIO(), io.StringIO()
         with redirect_stdout(stdout), redirect_stderr(stderr):
-            code = book_scan.main(
+            code = offline_main(
                 ["--user-id", _A_USER_ID, "--output", str(out)],
                 fetch=_fetch_returning(_NO_BOOK_FEED),
             )
@@ -335,7 +352,7 @@ class CliTest(unittest.TestCase):
 
         stdout, stderr = io.StringIO(), io.StringIO()
         with redirect_stdout(stdout), redirect_stderr(stderr):
-            code = book_scan.main(
+            code = offline_main(
                 ["--user-id", _A_USER_ID, "--output", str(out)], fetch=explode
             )
         self.assertEqual(code, 2)
@@ -348,7 +365,7 @@ class CliTest(unittest.TestCase):
         out = self.root / "books.json"
         stdout, stderr = io.StringIO(), io.StringIO()
         with redirect_stdout(stdout), redirect_stderr(stderr):
-            code = book_scan.main(
+            code = offline_main(
                 ["--user-id", _A_USER_ID, "--output", str(out)],
                 fetch=_fetch_returning(_MALFORMED_XML),
             )
@@ -361,7 +378,7 @@ class CliTest(unittest.TestCase):
         feed_path.write_bytes(_FIXTURE)
         out = self.root / "books.json"
 
-        code = book_scan.main(
+        code = offline_main(
             [
                 "--user-id",
                 _A_USER_ID,
@@ -379,7 +396,7 @@ class CliTest(unittest.TestCase):
     def test_a_missing_feed_file_exits_2(self) -> None:
         out = self.root / "books.json"
         with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
-            code = book_scan.main(
+            code = offline_main(
                 [
                     "--user-id",
                     _A_USER_ID,
@@ -398,7 +415,7 @@ class CliTest(unittest.TestCase):
         # URL that actually reaches `fetch` must carry no key at all.
         out = self.root / "books.json"
         fetch, urls = _capturing_fetch(_FIXTURE)
-        code = book_scan.main(
+        code = offline_main(
             ["--user-id", _A_USER_ID, "--output", str(out)], fetch=fetch
         )
         self.assertEqual(code, 0)
@@ -408,7 +425,7 @@ class CliTest(unittest.TestCase):
     def test_explicit_key_option_reaches_the_built_url(self) -> None:
         out = self.root / "books.json"
         fetch, urls = _capturing_fetch(_FIXTURE)
-        code = book_scan.main(
+        code = offline_main(
             ["--user-id", _A_USER_ID, "--key", _A_KEY, "--output", str(out)],
             fetch=fetch,
         )
@@ -417,11 +434,11 @@ class CliTest(unittest.TestCase):
 
     def test_book_scan_key_env_var_supplies_the_key_when_option_absent(self) -> None:
         # BOOK_SCAN_KEY exists precisely so the key never needs to appear in a shell
-        # history or a scheduled command line -- this is what proves the fallback.
+        # history or a scheduled command line; this is what proves the fallback.
         out = self.root / "books.json"
         fetch, urls = _capturing_fetch(_FIXTURE)
         with patch.dict(os.environ, {"BOOK_SCAN_KEY": _A_KEY}):
-            code = book_scan.main(
+            code = offline_main(
                 ["--user-id", _A_USER_ID, "--output", str(out)], fetch=fetch
             )
         self.assertEqual(code, 0)
@@ -431,7 +448,7 @@ class CliTest(unittest.TestCase):
         out = self.root / "books.json"
         fetch, urls = _capturing_fetch(_FIXTURE)
         with patch.dict(os.environ, {"BOOK_SCAN_KEY": "env-key-must-lose"}):
-            code = book_scan.main(
+            code = offline_main(
                 ["--user-id", _A_USER_ID, "--key", _A_KEY, "--output", str(out)],
                 fetch=fetch,
             )
@@ -443,7 +460,7 @@ class CliTest(unittest.TestCase):
         out = self.root / "books.json"
         buffer = io.StringIO()
         with redirect_stdout(buffer):
-            code = book_scan.main(
+            code = offline_main(
                 ["--user-id", _A_USER_ID, "--key", _A_KEY, "--output", str(out)],
                 fetch=_fetch_returning(_FIXTURE),
             )
@@ -463,7 +480,7 @@ class SamplesPairTest(unittest.TestCase):
         )
         with TemporaryDirectory() as tmp:
             out = Path(tmp) / "books.json"
-            code = book_scan.main(
+            code = offline_main(
                 [
                     "--user-id",
                     _A_USER_ID,

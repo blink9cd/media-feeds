@@ -1,7 +1,7 @@
 """`_real_fetch`, the one real network seam, with `urlopen` faked.
 
 The live suite (tests/test_live_artwork.py) proves this seam against the real endpoint
-and skips offline; what it cannot prove deterministically is what the seam does AROUND
+and skips offline; what it cannot prove deterministically is what the seam does around
 the call. This file holds that, network-free, so it runs everywhere the unit tests do.
 """
 
@@ -29,9 +29,9 @@ class RealFetchTest(unittest.TestCase):
     """What `_real_fetch` does around `urlopen`, faked so no test reaches the host."""
 
     def test_an_http_error_response_is_closed_before_it_is_re_raised(self) -> None:
-        # An HTTP error is still a RESPONSE: `urlopen` raises it BEFORE the `with` in
+        # An HTTP error is still a response: `urlopen` raises it before the `with` in
         # `_real_fetch` can bind it, carrying the error page's open body, and
-        # `_search` then drops it as one more OSError -- so nothing downstream ever
+        # `_search` then drops it as one more OSError, so nothing downstream ever
         # closed it, and every real 4xx/5xx leaked its connection as a
         # ResourceWarning raised nowhere near its cause. Asserted on the stream
         # directly rather than by catching that warning, which would depend on when

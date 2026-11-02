@@ -1,15 +1,15 @@
 """One live call against the real Letterboxd diary RSS feed.
 
 Every other test in this suite fakes `fetch`, which proves the parsing but not the
-CONTRACT: a renamed element, a reshaped `description`, or a moved endpoint would leave
+contract: a renamed element, a reshaped `description`, or a moved endpoint would leave
 every faked test green. This test is the only thing in the suite that would notice.
 
-Skipped -- not failed -- under two conditions, both decided independently of the
+Skipped, not failed, under two conditions, both decided independently of the
 subject: `FILM_SCAN_OFFLINE=1` (no network on this host, e.g. a sandboxed run that
 denies the real host outright), and no `FILM_SCAN_USERNAME` in the environment (no
 diary to test against). The username is a personal identifier that must never be
 written into a committed file (film_scan.py's `feed_url` docstring), so it is read
-from the environment ONLY -- there is no literal username anywhere in this file, not
+from the environment only: there is no literal username anywhere in this file, not
 even as a fallback default.
 """
 
@@ -37,7 +37,7 @@ class LiveFeedTest(unittest.TestCase):
 
     def setUp(self) -> None:
         """Skip only for a genuinely absent username, decided independently of the
-        subject (`newest_films`) -- see module docstring.
+        subject (`newest_films`); see the module docstring.
         """
         if _USERNAME is None:
             self.skipTest("FILM_SCAN_USERNAME not set - no diary to test against")
@@ -50,8 +50,8 @@ class LiveFeedTest(unittest.TestCase):
         self.assertTrue(body, "the diary feed came back empty")
         items = feed_read.feed_items(body)
         records = film_scan.newest_films(items, 1)
-        # The list may legitimately be empty -- an empty diary is a real state, not a
-        # broken contract. What this test guards is SHAPE: when a record does exist,
+        # The list may legitimately be empty: an empty diary is a real state, not a
+        # broken contract. What this test guards is shape: when a record does exist,
         # every field must still be the type film_scan.py promises, so a renamed or
         # reshaped upstream element fails this test loudly instead of blending into
         # "maybe the diary is just empty".
@@ -69,8 +69,8 @@ class LiveFeedTest(unittest.TestCase):
             self.assertTrue(
                 record["poster"] is None or isinstance(record["poster"], str)
             )
-            # newest_films() was called WITHOUT a lookup, so this is the record's
-            # shape, not the director's value -- resolving one here would add a second
+            # newest_films() was called without a lookup, so this is the record's
+            # shape, not the director's value; resolving one here would add a second
             # live boundary to a test whose whole point is to exercise the Letterboxd
             # one.
             self.assertIsNone(record["director"])
@@ -79,7 +79,7 @@ class LiveFeedTest(unittest.TestCase):
         """The join key the director lookup depends on, checked at its own source.
 
         This is the only test anywhere that would notice Letterboxd dropping or
-        renaming `tmdb:movieId`. Nothing would break loudly if it vanished -- every
+        renaming `tmdb:movieId`. Nothing would break loudly if it vanished: every
         record would simply record a null director forever, at a truthful 100%
         coverage and with every faked test still green.
         """

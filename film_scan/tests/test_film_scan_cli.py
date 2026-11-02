@@ -1,9 +1,10 @@
 """The CLI's exit codes and output, driven end to end with an injected fetch.
 
 Every test injects `fetch` or `--feed-file`, drives `main` through `_main` (whose
-director seam defaults to a fake, never `main`'s own default, the real Wikidata
-client), and points `--output` at a `tempfile.TemporaryDirectory()` -- no test here
-touches the network. `tests/test_live_feed.py` is the one file in this suite that
+director and TMDB seams default to fakes, never `main`'s own defaults, the real
+Wikidata client and the real HTTPS fetch, and which sets the TMDB token variable to a
+placeholder), and points `--output` at a `tempfile.TemporaryDirectory()`, so no test
+here touches the network. `tests/test_live_feed.py` is the one file in this suite that
 reaches the real boundary, and only when explicitly asked to (see that file's module
 docstring).
 """
@@ -12,12 +13,14 @@ from __future__ import annotations
 
 import io
 import json
-import re
+import os
 import sys
 import unittest
+from collections.abc import Mapping
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 _TOOL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_TOOL_ROOT))
@@ -29,7 +32,7 @@ import help_formatter  # noqa: E402 - reachable only via film_scan's bootstrap
 
 _FIXTURE = (_TOOL_ROOT / "fixtures" / "diary.xml").read_bytes()
 
-# A synthetic feed whose only item is a list, not a film -- the "half a feed is not
+# A synthetic feed whose only item is a list, not a film: the "half a feed is not
 # films" case `diary_entries` already filters out; the CLI-level case here is that it
 # must exit 1, not crash, and its message must not mention the username.
 _NO_FILMS_FEED = (
@@ -40,12 +43,12 @@ _NO_FILMS_FEED = (
 )
 
 # Deliberately not well-formed XML (an unterminated tag), so feed_read.feed_items
-# raises ValueError -- the "fetch returned garbage" case, distinct from _NO_FILMS_FEED
+# raises ValueError: the "fetch returned garbage" case, distinct from _NO_FILMS_FEED
 # above (well-formed XML with no films) and from an OSError (the fetch itself failed).
 _MALFORMED_XML = b"<rss><channel><item>unterminated"
 
 # A placeholder username chosen to look nothing like a real one and to be easy to spot
-# if a message under test ever echoes it back -- see film_scan.py's feed_url docstring
+# if a message under test ever echoes it back; see film_scan.py's feed_url docstring
 # on why the username is never written anywhere.
 _A_USERNAME = "a-placeholder-username"
 
@@ -70,7 +73,7 @@ def _unresolved_lookup(tmdb_id: str) -> str | None:
     """The director seam for a test that is not about the director: answers "none".
 
     What the real client answers for a film Wikidata does not carry, minus the
-    requests. `main`'s own default IS the real client, so every call here goes
+    requests. `main`'s own default is the real client, so every call here goes
     through `_main` below and never falls back to it; a test that is about the
     director injects a recording fake instead.
     """
@@ -78,14 +81,45 @@ def _unresolved_lookup(tmdb_id: str) -> str | None:
     return None
 
 
+#: What `_tmdb_answering` names as every film's poster, and what the record carries.
+_TMDB_POSTER = "https://image.tmdb.org/t/p/w500/a-placeholder-poster.jpg"
+
+
+def _tmdb_answering(body: bytes) -> feed_read.HeaderFetcher:
+    """A fake TMDB fetch that ignores its arguments and returns a fixed body."""
+
+    def fetch(url: str, timeout: float, headers: Mapping[str, str]) -> bytes:
+        del url, timeout, headers
+        return body
+
+    return fetch
+
+
+_TMDB_WITH_POSTER = _tmdb_answering(b'{"poster_path": "/a-placeholder-poster.jpg"}')
+
+
+def _explode_tmdb(url: str, timeout: float, headers: Mapping[str, str]) -> bytes:
+    """A TMDB fetch fake that fails the test if it is ever called."""
+    del url, timeout, headers
+    raise AssertionError("the TMDB fetch must not be called on a --feed-file run")
+
+
 def _main(
     argv: list[str],
     *,
     fetch: feed_read.Fetcher,
     lookup: film_scan.DirectorLookup = _unresolved_lookup,
+    poster_fetch: feed_read.HeaderFetcher = _TMDB_WITH_POSTER,
 ) -> int:
-    """`film_scan.main` with both network seams injected."""
-    return film_scan.main(argv, fetch=fetch, lookup=lookup)
+    """`film_scan.main` with all three network seams injected and a placeholder token.
+
+    The token variable is pinned here so a real one in the shell running the suite
+    can change nothing; the TMDB tests proper are tests/test_film_scan_tmdb_poster.py.
+    """
+    with patch.dict(os.environ, {film_scan.TMDB_TOKEN_ENV: "a-placeholder-token"}):
+        return film_scan.main(
+            argv, fetch=fetch, lookup=lookup, poster_fetch=poster_fetch
+        )
 
 
 class FeedUrlTest(unittest.TestCase):
@@ -100,7 +134,7 @@ class FeedUrlTest(unittest.TestCase):
     def test_it_percent_encodes_a_username_with_a_slash_and_a_question_mark(
         self,
     ) -> None:
-        # A raw "/" would add a path segment; a raw "?" would start a query string --
+        # A raw "/" would add a path segment; a raw "?" would start a query string;
         # either reshapes the URL entirely. Percent-encoding is what stops that.
         url = film_scan.feed_url("a/b?c")
         self.assertEqual(url, "https://letterboxd.com/a%2Fb%3Fc/rss/")
@@ -150,7 +184,28 @@ class ParserShapeTest(unittest.TestCase):
         # would pass with the stock formatter back in place ("The version trap" in
         # help_formatter.md). The floor is 3.12, below that fix.
         formatter_class = film_scan.build_parser().formatter_class
-        self.assertIs(formatter_class, help_formatter.ReqAwareDefaultsFormatter)
+        self.assertIs(formatter_class, help_formatter.UnsetHidingFormatter)
+
+    def test_help_shows_no_unset_default(self) -> None:
+        # An option left out holds None, which is no value a person could type, so
+        # "(default: None)" would say nothing true; each such option's help says what
+        # leaving it out means instead. This half renders on every interpreter.
+        text = film_scan.build_parser().format_help()
+        self.assertNotIn("(default: None)", text)
+
+    def test_help_shows_no_false_default_for_a_flag(self) -> None:
+        # A store_true flag's help already says what giving it does, so a
+        # "(default: False)" adds nothing. Whitespace is collapsed first because
+        # argparse may wrap the stamp across two lines.
+        text = " ".join(film_scan.build_parser().format_help().split())
+        self.assertNotIn("(default: False)", text)
+
+    def test_no_director_is_falsy_when_omitted_and_true_when_given(self) -> None:
+        parser = film_scan.build_parser()
+        self.assertFalse(parser.parse_args(["--username", "x"]).no_director)
+        self.assertIs(
+            parser.parse_args(["--username", "x", "--no-director"]).no_director, True
+        )
 
 
 class CliTest(unittest.TestCase):
@@ -189,56 +244,27 @@ class CliTest(unittest.TestCase):
         self.assertNotIn(str(self.root), raw)
         self.assertNotIn(_A_USERNAME, raw)
 
-    def test_the_written_poster_is_resized_to_the_default_width(self) -> None:
-        # The fixture's poster is the 600x900 the feed hands out; the record must
-        # carry the smaller PRE-GENERATED size the site actually renders.
+    def test_the_written_poster_is_the_one_tmdb_names(self) -> None:
         out = self.root / "films.json"
         _main(
             ["--username", _A_USERNAME, "--output", str(out)],
             fetch=_fetch_returning(_FIXTURE),
         )
         records = json.loads(out.read_text(encoding="utf-8"))
-        self.assertIn("-0-400-0-600-crop", records[0]["poster"])
-        self.assertNotIn("-0-600-0-900-crop", records[0]["poster"])
+        self.assertEqual(records[0]["poster"], _TMDB_POSTER)
 
-    def test_poster_width_chooses_another_pre_generated_size(self) -> None:
+    def test_a_film_tmdb_has_no_poster_for_is_written_with_a_null_poster(self) -> None:
+        # A missing poster degrades to a text-only card, not an error.
         out = self.root / "films.json"
-        _main(
-            [
-                "--username",
-                _A_USERNAME,
-                "--output",
-                str(out),
-                "--poster-width",
-                "300",
-            ],
-            fetch=_fetch_returning(_FIXTURE),
-        )
-        records = json.loads(out.read_text(encoding="utf-8"))
-        self.assertIn("-0-300-0-450-crop", records[0]["poster"])
-
-    def test_a_film_with_no_poster_is_written_with_a_null_poster(self) -> None:
-        # The resize step must be SKIPPED, not applied to None. 1 diary item in 150
-        # (measured) carries no <img> at all, so this is a real feed shape, and a
-        # missing poster degrades to a text-only card, not an error.
-        out = self.root / "films.json"
-        code = _main(
-            ["--username", _A_USERNAME, "--output", str(out)],
-            fetch=_fetch_returning(re.sub(rb"<img[^>]*>", b"", _FIXTURE)),
-        )
+        with redirect_stderr(io.StringIO()):
+            code = _main(
+                ["--username", _A_USERNAME, "--output", str(out)],
+                fetch=_fetch_returning(_FIXTURE),
+                poster_fetch=_tmdb_answering(b'{"poster_path": null}'),
+            )
         self.assertEqual(code, 0)
         records = json.loads(out.read_text(encoding="utf-8"))
         self.assertIsNone(records[0]["poster"])
-
-    def test_a_width_letterboxd_does_not_serve_is_refused_by_the_parser(self) -> None:
-        # argparse `choices` refuses it at PARSE time -- offline, before any fetch --
-        # so a width that would 403 at page-view time can never reach the record.
-        with self.assertRaises(SystemExit) as caught:
-            with redirect_stderr(io.StringIO()):
-                film_scan.build_parser().parse_args(
-                    ["--username", _A_USERNAME, "--poster-width", "345"]
-                )
-        self.assertEqual(caught.exception.code, 2)
 
     def test_the_record_is_written_atomically_no_temp_file_survives(self) -> None:
         out = self.root / "films.json"
@@ -249,7 +275,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(out.exists())
         # A concurrent reader (the page, mid-refresh) must never observe a
-        # half-written file -- the temp file this write used is renamed away, not
+        # half-written file: the temp file this write used is renamed away, not
         # left beside the real one.
         leftovers = list(self.root.glob("*.tmp"))
         self.assertEqual(leftovers, [], f"temp file(s) left behind: {leftovers}")
@@ -286,7 +312,7 @@ class CliTest(unittest.TestCase):
                 ["--username", _A_USERNAME, "--output", str(out)], fetch=explode
             )
         self.assertEqual(code, 2)
-        # A failed refresh keeps the last good record -- the pre-existing file must
+        # A failed refresh keeps the last good record: the pre-existing file must
         # be byte-for-byte unchanged, not merely still present.
         self.assertEqual(out.read_text(encoding="utf-8"), old_content)
         self.assertNotIn(_A_USERNAME, stdout.getvalue() + stderr.getvalue())
@@ -350,7 +376,7 @@ class DirectorCliTest(unittest.TestCase):
         self.addCleanup(self._tmp.cleanup)
 
     def _run(self, *extra: str, lookup: film_scan.DirectorLookup) -> dict[str, object]:
-        """Run `main` and return the ONE record its default `--count` of 1 writes."""
+        """Run `main` and return the one record its default `--count` of 1 writes."""
         out = self.root / "films.json"
         with redirect_stdout(io.StringIO()):
             code = _main(
@@ -374,7 +400,7 @@ class DirectorCliTest(unittest.TestCase):
         self.assertEqual(calls, ["1"])
 
     def test_no_director_skips_the_lookup_and_records_null(self) -> None:
-        # The opt-out must not merely discard the answer, it must never ASK -- that
+        # The opt-out must not merely discard the answer, it must never ask; that
         # is what makes a fully offline refresh possible.
         def explode(_tmdb_id: str) -> str | None:
             raise AssertionError("--no-director must not reach the lookup")
@@ -407,13 +433,15 @@ class SamplesPairTest(unittest.TestCase):
                     str(out),
                     "--feed-file",
                     str(_TOOL_ROOT / "fixtures" / "diary.xml"),
-                    # The sample's documented regeneration command must reach NO
+                    # The sample's documented regeneration command must reach no
                     # network, and the feed is not the only boundary: without
                     # this the director lookup would fire at Wikidata, making the
                     # committed sample depend on a live third party.
                     "--no-director",
                 ],
                 fetch=_explode_fetch,
+                # Nor TMDB: an offline run records no poster at all.
+                poster_fetch=_explode_tmdb,
             )
             self.assertEqual(code, 0)
             fresh = json.loads(out.read_text(encoding="utf-8"))

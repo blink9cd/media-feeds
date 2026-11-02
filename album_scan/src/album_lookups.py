@@ -1,10 +1,10 @@
 """Every lookup one refresh makes, and the shape one answers with.
 
-Three of them: WHICH albums are newest (the library folder, Music.app, or `auto`'s
-preference between the two), WHAT the source knows about each one (its counts, year
-and favorites), and WHICH cover art the store has for it. They are one module because
-they are one kind of thing -- the code that reads beyond the record itself -- and
-because each carries the arm that SKIPS it when its flag says so (`--source`,
+Three of them: which albums are newest (the library folder, Music.app, or `auto`'s
+preference between the two), what the source knows about each one (its counts, year,
+and favorites), and which cover art the store has for it. They are one module because
+they are one kind of thing, the code that reads beyond the record itself, and
+because each carries the arm that skips it when its flag says so (`--source`,
 `--no-favorites`, `--no-artwork`), so the skip lives beside the call it replaces
 instead of in `main`'s loop.
 
@@ -40,7 +40,7 @@ FOLDER = "folder"
 class NewestAlbumResult(NamedTuple):
     """`resolve_albums`'s answer: the chosen albums, and which source produced them.
 
-    `refs` is a LIST because both sources can return more than one album once
+    `refs` is a list because both sources can return more than one album once
     `--count` asks for it. An empty list is the one spelling of "no album found".
 
     `resolved_source` is always `"music"` or `"folder"`, even when `refs` is empty:
@@ -83,12 +83,12 @@ def resolve_albums(
     """Resolve up to `count` newest albums for `--source`: folder, music, or auto.
 
     "auto" prefers Music.app's own record and falls back to the folder heuristic
-    only when Music.app has nothing to say -- an EMPTY list (see album_scan.md, "The
+    only when Music.app has nothing to say, which is an empty list (see album_scan.md, "The
     folder source"). The short-circuit holds: a successful Music.app answer never
     touches `library` at all, so an invalid `--library` under `--source music`, or
     under a successful `--source auto` lookup, never raises `NotADirectoryError`, nor
-    the `PermissionError` of a root that cannot be listed -- only a folder scan that
-    is actually ATTEMPTED can. Auto does not top up a short Music.app answer from the
+    the `PermissionError` of a root that cannot be listed: only a folder scan that
+    is actually attempted can. Auto does not top up a short Music.app answer from the
     folder scan: fewer than `count` from Music.app is still a genuine answer.
     """
     if source == FOLDER:
@@ -144,14 +144,14 @@ def artwork_for(
 ) -> ArtworkMatch:
     """This album's cover art, or a null match when `--no-artwork` is passed.
 
-    Takes the already-resolved `facts` rather than looking them up itself -- FACTS
-    BEFORE ARTWORK, in `main`'s per-ref loop, is load-bearing rather than incidental:
+    Takes the already-resolved `facts` rather than looking them up itself. Facts
+    before artwork, in `main`'s per-ref loop, is load-bearing rather than incidental:
     the year and track count the source reports decide which search result really is
-    this album -- as tiebreakers between name matches, and, when both agree, as a way
+    this album, as tiebreakers between name matches and, when both agree, as a way
     to admit a candidate whose name does not match. Unpacked into two optional numbers
     here rather than passed as a whole `AlbumFacts`: the artwork adapter is a sibling
     tool and does not import this tool's type. Statement form, not a conditional
-    EXPRESSION: coverage.py emits branch arcs for an if/else STATEMENT but none for
+    expression: coverage.py emits branch arcs for an if/else statement but none for
     `x if cond else y`, so the expression form lets an arm that never runs under test
     pass the 100% branch-coverage gate.
     """

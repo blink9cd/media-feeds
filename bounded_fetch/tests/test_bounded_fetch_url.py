@@ -1,5 +1,5 @@
 """Grouped suite: which URLs `https_url_or_none` accepts, and what `build_request`
-puts on the wire and refuses to -- proven without a request being sent.
+puts on the wire and refuses to, proven without a request being sent.
 """
 
 from __future__ import annotations
@@ -108,8 +108,8 @@ class TestBuildRequest(unittest.TestCase):
 
     def test_build_request_refuses_a_header_that_is_not_printable_ascii(self) -> None:
         # http.client encodes header values as latin-1 and raises UnicodeEncodeError
-        # for anything else, and that error's args and repr carry the WHOLE value --
-        # a bearer token included. So the refusal comes first, here, without it.
+        # for anything else, and that error's args and repr carry the WHOLE value
+        # (a bearer token included). So the refusal comes first, here, without it.
         for name, value in (
             ("Authorization", "Bearer t\u2019k"),
             ("X-Pr\u00f6be", "plain"),

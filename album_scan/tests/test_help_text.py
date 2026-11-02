@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from album_scan import build_parser  # noqa: E402 - import follows the sys.path bootstrap above
 
-# AFTER the line above, deliberately, and not sorted with it: help_formatter reaches
+# After the line above, deliberately, and not sorted with it: help_formatter reaches
 # sys.path only when album_scan's own bootstrap runs, which importing it does.
 import help_formatter  # noqa: E402 - reachable only via album_scan's bootstrap
 
@@ -58,24 +58,47 @@ class HelpTextTest(unittest.TestCase):
         self.assertIn("(default: -)", self.help)
 
     def test_the_formatter_is_built_on_the_shared_one(self) -> None:
-        # Pinned as a BINDING, not a rendering: on 3.13 and later argparse already
+        # Pinned as a binding, not a rendering: on 3.13 and later argparse already
         # drops the bogus "(default: None)" from a required option, so a --help
         # assertion here would pass just as well with the shared base removed
         # ("The version trap" in help_formatter.md). The floor is 3.12,
-        # below that fix. This tool has no required option TODAY, so the shim changes
+        # below that fix. This tool has no required option today, so the shim changes
         # nothing it renders; the binding is what keeps that true of the option added
         # next, instead of leaving one CLI in this project on the stock formatter.
         #
-        # An INSTANCE check, not assertIs: the local formatter MIXES the shared base
+        # An instance check, not assertIs: the local formatter mixes the shared base
         # with RawDescriptionHelpFormatter, which is what keeps the epilog's line
         # breaks, so the assertion is "built on", not "is". Instantiated the way
         # argparse itself does because `formatter_class` is typed as a callable
-        # (`_FormatterClass`) rather than a `type`, which `issubclass` rejects --
+        # (`_FormatterClass`) rather than a `type`, which `issubclass` rejects:
         # the same shape the defaults assertion above uses.
         self.assertIsInstance(
             self.parser.formatter_class(prog="x"),
             help_formatter.ReqAwareDefaultsFormatter,
         )
+
+    def test_the_formatter_hides_an_unset_default(self) -> None:
+        # An option left out holds None, which is no value a person could type, so
+        # "(default: None)" would say nothing true; each such option's help says what
+        # leaving it out means instead ("Unset: ...").
+        self.assertIsInstance(
+            self.parser.formatter_class(prog="x"),
+            help_formatter.RawNoneHidingFormatter,
+        )
+        self.assertNotIn("(default: None)", self.help)
+
+    def test_no_flag_prints_a_false_default(self) -> None:
+        # A store_true flag's help already says what giving it does, so a
+        # "(default: False)" adds nothing. Whitespace is collapsed first because
+        # argparse wraps the stamp across two lines under --no-favorites.
+        self.assertNotIn("(default: False)", " ".join(self.help.split()))
+
+    def test_each_flag_is_falsy_when_omitted_and_true_when_given(self) -> None:
+        flags = (("--no-artwork", "no_artwork"), ("--no-favorites", "no_favorites"))
+        for option, dest in flags:
+            with self.subTest(option=option):
+                self.assertFalse(getattr(self.parser.parse_args([]), dest))
+                self.assertIs(getattr(self.parser.parse_args([option]), dest), True)
 
     def test_exit_2_covers_a_usage_error_the_library_and_the_output(self) -> None:
         self.assertIn("a usage error", self.help)
@@ -97,6 +120,15 @@ class HelpTextTest(unittest.TestCase):
     def test_source_help_spells_music_app(self) -> None:
         self.assertIn("Music.app", _help_for("--source"))
         self.assertNotIn("music.app", _help_for("--source"))
+
+    def test_cover_report_help_lists_the_results_with_a_serial_comma(self) -> None:
+        self.assertIn("not-asked, or unknown", _help_for("--cover-report"))
+
+    def test_the_prerequisites_lists_take_a_serial_comma(self) -> None:
+        text = " ".join(self.help.split())
+        for phrase in ("year, and favorites", "running, and scriptable"):
+            with self.subTest(phrase=phrase):
+                self.assertIn(phrase, text)
 
     def test_the_epilog_counts_osascript_per_source(self) -> None:
         self.assertIn("--source folder runs none", self.help)

@@ -35,7 +35,7 @@ class AlbumRecordTest(unittest.TestCase):
                 "added": "2026-08-30",
                 "artwork": "https://example.com/a/600x600bb.jpg",
                 # Null because no counts were supplied, which is a different fact
-                # from a zero count -- see tests/test_favorites_in_record.py.
+                # from a zero count; see tests/test_favorites_in_record.py.
                 "tracks": None,
                 "favorited": None,
                 "year": None,
@@ -54,14 +54,14 @@ class AlbumRecordTest(unittest.TestCase):
     def test_the_record_contains_no_filesystem_path_from_a_deep_library(self) -> None:
         """The guarantee the module docstring calls the most important in this
         project, so it must hold on every platform the gate type-checks (win32,
-        linux, darwin), not just the one it happened to run on. A plain
+        linux, darwin), rather than only the one it happened to run on. A plain
         `assertNotIn(tmp, serialized)` misses a leaked Windows path: `json.dumps`
         doubles a Windows path's backslashes, so the raw `tmp` (single backslashes)
         never appears in the doubled-backslash JSON text even when the path leaked in
-        full -- checked against BOTH the raw and the JSON-escaped form of `tmp` for
+        full, so it is checked against both the raw and the JSON-escaped form of `tmp` for
         that reason. And checking only "/" misses a Windows path entirely (it has
         none); both slash directions are rejected, regardless of which one this
-        host's `tmp` actually used, because the record must carry neither on ANY
+        host's `tmp` actually used, because the record must carry neither on any
         platform.
         """
         with TemporaryDirectory() as tmp:
@@ -74,8 +74,8 @@ class AlbumRecordTest(unittest.TestCase):
         self.assertNotIn(tmp, serialized)
         escaped_tmp = json.dumps(tmp)[1:-1]  # strip the quotes json.dumps wraps it in
         self.assertNotIn(escaped_tmp, serialized)
-        # No path separator survives either -- forward slash, backslash (a JSON-
-        # escaped backslash is a PAIR of backslash characters, so a single-char
+        # No path separator survives either: forward slash, backslash (a JSON-
+        # escaped backslash is a pair of backslash characters, so a single-char
         # search for "\\" already catches it), and this host's own os.sep, which is
         # redundant with the two above but stated because the guarantee is "no
         # separator of any kind", not "no separator this host happens to use".
@@ -89,7 +89,7 @@ class AlbumRecordTest(unittest.TestCase):
         # Deliberately a literal, not derived from AlbumRecord.__annotations__: a set
         # derived from the subject compares the subject against itself and would pass
         # after any rename. tests/test_record_contract.py holds the other copy, which
-        # is the one the CONSUMER's contract is stated in; this one guards the
+        # is the one the consumer's contract is stated in; this one guards the
         # producer in isolation, so both are meant to exist.
         self.assertEqual(
             set(album_record(REF, None)),

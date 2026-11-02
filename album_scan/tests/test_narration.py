@@ -4,7 +4,7 @@ The notices that name a fallback, a fact that was asked for and not obtained, an
 folder the scan could not read. Each is one line, on stderr only: the exit code and
 whatever reaches stdout are pinned unchanged beside every notice.
 
-Every `main` call injects BOTH boundary seams. A seam a case must not reach raises;
+Every `main` call injects both boundary seams. A seam a case must not reach raises;
 one that answers does so without a subprocess or a socket.
 """
 
@@ -34,7 +34,7 @@ from album_scan import main  # noqa: E402 - import follows the sys.path bootstra
 
 # album_scan's bootstrap above is what puts its private src/ and cover_art on sys.path.
 import notices  # noqa: E402 - import follows the sys.path bootstrap above
-from cover_art import AlbumRef, ArtworkMatch  # noqa: E402 - follows the bootstrap above
+from cover_art import MISS_NO_ART, AlbumRef, ArtworkMatch  # noqa: E402 - follows the bootstrap above
 
 # os.geteuid exists only off Windows, and the gate type-checks for win32 too, so the
 # root check is a getattr rather than a bare attribute; root can list a mode-000
@@ -72,8 +72,8 @@ class ControlCharacterEchoTest(unittest.TestCase):
 
     Every name this tool prints came out of a track tag, which is arbitrary text: the
     AppleScript concatenates it unescaped, and the row parser refuses only NUL and the
-    row terminator. Measured: ESC, BEL and the C1 block all reach the record intact.
-    Printed to a terminal, ESC is not text but an instruction to it -- a crafted tag
+    row terminator. Measured: ESC, BEL, and the C1 block all reach the record intact.
+    Printed to a terminal, ESC is not text but an instruction to it: a crafted tag
     can rewrite the window title, erase the lines above, or wrap the name in an OSC 8
     hyperlink pointing anywhere. The record is unaffected; the exposure is the
     terminal of whoever ran the refresh.
@@ -103,7 +103,7 @@ class ControlCharacterEchoTest(unittest.TestCase):
         self.assertIn("wrote 1 album(s)", stderr)
         self.assertNotIn(self._ESC, stderr)
         self.assertIn("\\x1b", stderr)
-        # The RECORD keeps the tag as it was: it is JSON a browser reads, and
+        # The record keeps the tag as it was: it is JSON a browser reads, and
         # escaping it there would change the data to protect a terminal.
         self.assertEqual(json.loads(stdout)[0]["artist"], f"An{self._ESC}Artist")
 
@@ -111,7 +111,7 @@ class ControlCharacterEchoTest(unittest.TestCase):
     def test_both_degradation_notices_escape_a_control_character(self) -> None:
         # Through the CLI, like every other case here: the folder scan reads an
         # artist and an album straight off directory names, and a control character
-        # is legal in one -- so no record has to be hand-built to reach the notices.
+        # is legal in one, so no record has to be hand-built to reach the notices.
         with TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / f"An{self._ESC}Artist" / f"A{self._ESC}Record").mkdir(parents=True)
@@ -236,7 +236,7 @@ class FallbackNoticeTest(unittest.TestCase):
     def test_the_notice_says_what_is_known_about_the_folder_scan(self) -> None:
         # What is known is that a folder's birth time is not a reliable "date added"
         # (album_scan.md, "Why the folder scan's date is a heuristic"). A stranger
-        # reading "this library" would take it to mean THEIR library.
+        # reading "this library" would take it to mean their library.
         (self.root / "An Artist" / "A Record").mkdir(parents=True)
         _, _, stderr = _run(
             [
@@ -257,6 +257,11 @@ class FallbackNoticeTest(unittest.TestCase):
         self.assertNotIn("this library", notice)
 
 
+def _failing_store(_url: str, _timeout: float) -> bytes:
+    """A store that never answers: every request fails at the network layer."""
+    raise OSError("unreachable")
+
+
 def _empty_store(_url: str, _timeout: float) -> bytes:
     """An iTunes Search that answers, and has no candidate for this album."""
     return json.dumps({"results": []}).encode("utf-8")
@@ -266,7 +271,7 @@ class DegradationNoticeTest(unittest.TestCase):
     """A fact that was asked for and not obtained is said once, per album, on stderr.
 
     Null counts and a null cover are valid record states, so neither changes the
-    exit code or the record; but a null that was ASKED for is a degraded refresh,
+    exit code or the record; but a null that was asked for is a degraded refresh,
     and one that was declined (`--no-favorites`, `--no-artwork`) is not, so only the
     former is reported.
     """
@@ -276,8 +281,12 @@ class DegradationNoticeTest(unittest.TestCase):
         "in its folder, or the folder could not be read)"
     )
     _COVER = (
-        "album_scan: cover art not resolved for An Artist - A Record (no "
-        "verified store match, or the lookup failed)"
+        "album_scan: cover art not resolved for An Artist - A Record (the store "
+        "answered and no album in it is this one)"
+    )
+    _COVER_FAILED = (
+        "album_scan: cover art not resolved for An Artist - A Record (a store "
+        "request failed, so the store may still carry it)"
     )
 
     def setUp(self) -> None:
@@ -337,6 +346,45 @@ class DegradationNoticeTest(unittest.TestCase):
         stdout, stderr = self._run(["--no-favorites"], run=no_music, fetch=_empty_store)
         self.assertIn(self._COVER + "\n", stderr)
         self.assertIsNone(json.loads(stdout)[0]["artwork"])
+
+    def test_a_failed_cover_lookup_says_so_rather_than_no_match(self) -> None:
+        # The two nulls used to share one line naming both causes, which is how a
+        # search-index miss passed for a network blip in every refresh for weeks.
+        stdout, stderr = self._run(
+            ["--no-favorites"], run=no_music, fetch=_failing_store
+        )
+        self.assertIn(self._COVER_FAILED + "\n", stderr)
+        self.assertNotIn(self._COVER + "\n", stderr)
+        self.assertIsNone(json.loads(stdout)[0]["artwork"])
+
+    def test_the_cover_notice_names_no_art_and_claims_no_cause_it_was_not_given(
+        self,
+    ) -> None:
+        # Two nulls the CLI path cannot stage from a folder: the store's own match
+        # with no usable image, and a null match built without a reason, which must
+        # not be passed off as either cause.
+        ref = AlbumRef(artist="An Artist", album="A Record", added=dt.date(2001, 1, 1))
+        expected = {
+            MISS_NO_ART: "the store has this album but no usable cover image for it",
+            None: "no verified store match, or the lookup failed",
+        }
+        for reason, text in expected.items():
+            with self.subTest(reason=reason):
+                stderr = io.StringIO()
+                with redirect_stderr(stderr):
+                    notices.report_degradation(
+                        ref,
+                        None,
+                        ArtworkMatch(url=None, year=None, reason=reason),
+                        source="music",
+                        no_favorites=True,
+                        no_artwork=False,
+                    )
+                self.assertEqual(
+                    stderr.getvalue(),
+                    "album_scan: cover art not resolved for An Artist - A Record "
+                    f"({text})\n",
+                )
 
     def test_a_track_whose_tags_cannot_be_read_is_reported_by_name(self) -> None:
         album = self.root / "An Artist" / "A Record"

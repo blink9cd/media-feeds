@@ -1,13 +1,13 @@
 """`--count`'s CLI surface on the folder path: what it accepts, refuses, and writes.
 
 Every test that calls `main` passes `--source folder --no-favorites --no-artwork`, so
-nothing below reaches the `run` seam or the network -- and both seams are injected
+nothing below reaches the `run` seam or the network, and both seams are injected
 with fakes that raise, so dropping either flag fails the test rather than spawning a
 real `osascript`. This file is scoped to the folder-scan path's own `--count` surface
-(below-one, non-integer, the default, an explicit value at, below and past the
+(below-one, non-integer, the default, an explicit value at, below, and past the
 library's size). The Music.app path takes a `count` above one too,
 because its per-track AppleScript rows are collapsed to per-album ones before ranking
-(`newest_albums_from_music`, in `recently_added.py`) -- but the CLI wiring that
+(`newest_albums_from_music`, in `recently_added.py`), but the CLI wiring that
 threads `--count` through to it is exercised in `test_source_selection.py`, which owns
 every other `--source music` case and injects the `run` seam this file never reaches.
 
@@ -59,8 +59,8 @@ class CountOptionTest(unittest.TestCase):
     def _run(self, extra_args: list[str]) -> int:
         """Invoke `main` against `self.root`, fully offline.
 
-        A --count value argparse rejects raises `SystemExit` rather than returning --
-        the same path the real `if __name__ == "__main__":` entry point relies on --
+        A --count value argparse rejects raises `SystemExit` rather than returning
+        (the same path the real `if __name__ == "__main__":` entry point relies on),
         so this normalizes both outcomes into the plain int every other assertion
         below compares against.
         """
@@ -106,10 +106,10 @@ class CountOptionTest(unittest.TestCase):
         self.assertIsInstance(json.loads(self.out.read_text(encoding="utf-8")), list)
 
     def test_a_valid_explicit_count_selects_that_many_albums_newest_first(self) -> None:
-        # Exercises `positive_int`'s SUCCESS path end to end through the parser: the
+        # Exercises `positive_int`'s success path end to end through the parser: the
         # cases above are either refused or never call it (argparse does not apply
         # `type` to a non-string default), so this is what proves a well-formed
-        # --count value actually reaches `main` and `newest_albums`, not just that a
+        # --count value actually reaches `main` and `newest_albums`, as well as that a
         # bad one is refused.
         _make_album(self.root, "Oldest Artist", "Oldest", added=1_000_000)
         _make_album(self.root, "Middle Artist", "Middle", added=2_000_000)
@@ -130,7 +130,7 @@ class CountOptionTest(unittest.TestCase):
 
     def test_a_count_below_the_library_size_writes_only_that_many(self) -> None:
         # A parsed count that reached `newest_albums` as None would slice nothing
-        # off and return every album; only a count SMALLER than the library can tell
+        # off and return every album; only a count smaller than the library can tell
         # that apart from the value getting through.
         _make_album(self.root, "Oldest Artist", "Oldest", added=1_000_000)
         _make_album(self.root, "Middle Artist", "Middle", added=2_000_000)

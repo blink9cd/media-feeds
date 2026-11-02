@@ -27,7 +27,7 @@ class ArtworkPxFloorTest(unittest.TestCase):
         self._tmp = TemporaryDirectory()
         self.root = Path(self._tmp.name)
         self.addCleanup(self._tmp.cleanup)
-        # A real album, so a value that got PAST the parser would go on to reach a
+        # A real album, so a value that got past the parser would go on to reach a
         # seam and fail the test there rather than exiting 1 on an empty library.
         (self.root / "An Artist" / "A Record").mkdir(parents=True)
         self.out = self.root / "album.json"

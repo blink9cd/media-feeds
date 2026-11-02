@@ -3,7 +3,7 @@
 `artwork_url` pools two searches before ranking (its docstring records why), keyed on
 `collectionId` so the same record arriving from both is scored once. These pin the two
 properties of that pool a fake fetcher can prove: the search asks for a window wide
-enough to choose BETWEEN candidates, and a candidate with no usable id is kept rather
+enough to choose between candidates, and a candidate with no usable id is kept rather
 than dropped.
 """
 
@@ -37,7 +37,7 @@ class SearchWindowTest(unittest.TestCase):
 
     def test_each_search_asks_for_twenty_five_results(self) -> None:
         # Was 1, which is the whole defect the matcher exists to fix: with a single
-        # result there is nothing to choose BETWEEN. The limit is the one number
+        # result there is nothing to choose between. The limit is the one number
         # that makes verification possible, so it is pinned from the request the
         # fetcher actually receives, on both queries.
         seen: list[str] = []
@@ -58,7 +58,7 @@ class DedupeTest(unittest.TestCase):
     """Candidates with no usable `collectionId` are kept, never deduped against."""
 
     def test_a_second_candidate_without_an_id_is_still_considered(self) -> None:
-        # The dedupe treats a missing or unhashable id as NO identity, so two such
+        # The dedupe treats a missing or unhashable id as no identity, so two such
         # candidates must both reach the matcher: the second one here is the album
         # asked for, and a dedupe that keyed both on "no id" would drop it as a
         # repeat of the first and return no cover for an album the store listed.

@@ -6,18 +6,37 @@ music library or depends on this machine having one.
 
 from __future__ import annotations
 
-import os
 import unittest
+from collections.abc import Iterator
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 import library_walk
 
-# os.geteuid exists only off Windows, and the gate type-checks for win32 too, so the
-# root check is a getattr rather than a bare attribute; root can list a mode-000
-# directory, so the unreadable-folder test skips rather than fails under it.
-_GETEUID = getattr(os, "geteuid", None)
-_IS_ROOT = _GETEUID is not None and _GETEUID() == 0
+
+def _mode_000_locks_a_folder() -> bool:
+    """True when ``chmod(0)`` stops this process listing a folder.
+
+    Root can list a mode-000 folder, and on Windows ``chmod`` sets only the read-only
+    attribute, which never stops a listing (toolkit 182, round six). Probed rather than
+    inferred from the platform, so the real-permission tests run wherever they can.
+    """
+    with TemporaryDirectory() as tmp:
+        folder = Path(tmp) / "probe"
+        folder.mkdir()
+        folder.chmod(0)
+        try:
+            list(folder.iterdir())
+        except PermissionError:
+            return True
+        finally:
+            folder.chmod(0o755)
+    return False
+
+
+_MODE_000_LOCKS = _mode_000_locks_a_folder()
+_NO_LOCK = "a mode-000 folder can still be listed here (root, or Windows)"
 
 
 class AlbumDirsTest(unittest.TestCase):
@@ -71,7 +90,7 @@ class AlbumDirsTest(unittest.TestCase):
         self._album("Artist", "Double", "Disc 2")
         self.assertEqual(self._names(), ["Artist/Double"])
 
-    @unittest.skipIf(_IS_ROOT, "root can list a mode-000 directory")
+    @unittest.skipUnless(_MODE_000_LOCKS, _NO_LOCK)
     def test_an_unreadable_artist_folder_is_reported_by_name_and_passed_over(
         self,
     ) -> None:
@@ -84,12 +103,30 @@ class AlbumDirsTest(unittest.TestCase):
         self.assertEqual(skipped, ["Locked"])
         self.assertEqual([path.name for path in found], ["Record"])
 
-    @unittest.skipIf(_IS_ROOT, "root can list a mode-000 directory")
+    @unittest.skipUnless(_MODE_000_LOCKS, _NO_LOCK)
     def test_an_unreadable_artist_folder_is_silent_without_a_reporter(self) -> None:
         locked = self._album("Locked")
         locked.chmod(0)
         self.addCleanup(locked.chmod, 0o755)
         self.assertEqual(library_walk.album_dirs(self.root), [])
+
+    def test_a_listing_refused_by_permission_is_reported_and_passed_over(self) -> None:
+        # The portable twin of the mode-000 test: the refusal is raised directly, so the
+        # skip path is proven on a host where chmod cannot lock a folder.
+        self._album("Locked")
+        self._album("Readable", "Record")
+        real_iterdir = Path.iterdir
+
+        def refuse_locked(path: Path) -> Iterator[Path]:
+            if path.name == "Locked":
+                raise PermissionError(13, "Permission denied", str(path))
+            return real_iterdir(path)
+
+        skipped: list[str] = []
+        with mock.patch.object(Path, "iterdir", refuse_locked):
+            found = library_walk.album_dirs(self.root, skipped.append)
+        self.assertEqual(skipped, ["Locked"])
+        self.assertEqual([path.name for path in found], ["Record"])
 
     def test_the_default_library_is_the_music_albums_folder_under_home(self) -> None:
         self.assertEqual(library_walk.DEFAULT_LIBRARY, "~/Music/Albums")

@@ -47,9 +47,9 @@ class MusicIsReachableTest(unittest.TestCase):
         self.assertIs(music_is_reachable(run=run), False)
 
     def test_a_timeout_is_unreachable(self) -> None:
-        # A boundary that accepts the call and never answers is exactly as
+        # A boundary that accepts the call and never answers is just as
         # unexercisable as one that is absent, and the probe's own docstring already
-        # counts "automation permission denied" as a skip -- which is the state a
+        # counts "automation permission denied" as a skip, which is the state a
         # consent prompt nobody can answer actually produces.
         def run(_args: list[str], _timeout: float) -> subprocess.CompletedProcess[str]:
             raise subprocess.TimeoutExpired(["osascript"], REACHABILITY_TIMEOUT_SECONDS)

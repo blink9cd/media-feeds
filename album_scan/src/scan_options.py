@@ -2,9 +2,9 @@
 
 `album_scan.py` keeps `build_parser` and every `add_argument` call itself, so the
 parser and its options stay in the one file a CLI-to-doc check reads beside
-`album_scan.md`; this module holds the pieces that are not options -- the defaults it
-names, the `--count` type, the formatter, and the long description and epilog -- so the
-entry point stays under the file-length bar. Nothing here reads a library, a tag or
+`album_scan.md`; this module holds the pieces that are not options (the defaults it
+names, the `--count` type, the formatter, and the long description and epilog), so the
+entry point stays under the file-length bar. Nothing here reads a library, a tag, or
 Music.app.
 """
 
@@ -15,7 +15,7 @@ import argparse
 import help_formatter
 from folder_facts import STAR_THRESHOLDS
 
-# A general tool PRINTS its record; a caller names its own destination. Defaulting to
+# A general tool prints its record; a caller names its own destination. Defaulting to
 # one consumer's data directory is the rejected alternative: this tool knows nothing
 # about its consumers, and the file writer creates a missing parent directory.
 DEFAULT_OUTPUT = "-"
@@ -32,9 +32,9 @@ def positive_int(text: str) -> int:
     """An option value that must be an integer of at least one: --count, --artwork-px.
 
     Raised as an ArgumentTypeError rather than checked in main, so argparse renders
-    the usage message and exits 2 -- the same treatment a non-integer already gets,
+    the usage message and exits 2, the same treatment a non-integer already gets,
     rather than a second spelling of "bad argument". It also means the rejection
-    happens before any library scan, Music.app query or store lookup: without the
+    happens before any library scan, Music.app query, or store lookup: without the
     floor on --artwork-px, a zero or negative edge length went straight into a
     `0x0bb.webp` URL in the record. Defined locally, not in a shared module, on
     purpose: a shared module for so small a function would need its own gate-checked
@@ -46,24 +46,22 @@ def positive_int(text: str) -> int:
     return value
 
 
-class ScanHelpFormatter(
-    help_formatter.ReqAwareDefaultsFormatter, argparse.RawDescriptionHelpFormatter
-):
-    """Show every default AND keep the epilog's own line breaks.
+class ScanHelpFormatter(help_formatter.RawNoneHidingFormatter):
+    """Show every set default and keep the epilog's own line breaks.
 
     Neither stock formatter does both, and using the defaults formatter alone silently
     re-wraps the epilog into one unbroken block: its paragraph breaks vanish and even a
     short heading like "Exit codes:" can be split across a line.
 
-    The two bases override different methods -- `_get_help_string` for the defaults,
-    `_fill_text` for the wrapping -- so they compose with no conflict to resolve.
-    Because `_fill_text` no longer wraps, the epilog below is hard-wrapped by hand.
-    The mix stays local rather than imported from the sibling tool that builds the same
-    pair: the tools import each other's library functions, not their CLIs.
+    The shared base composes the two: the defaults half overrides `_get_help_string`
+    and the raw half `_fill_text`, so there is no conflict to resolve. Because
+    `_fill_text` no longer wraps, the epilog below is hard-wrapped by hand.
 
-    The defaults half is the SHARED formatter, which below CPython 3.13 suppresses the
-    misleading "(default: None)" argparse stamps onto a REQUIRED option. This tool has
-    none today, so binding it here is what keeps that true of the option added next.
+    The defaults half also hides a `None` default, which is no value a person could
+    type; each such option's help says what leaving it out means ("Unset: ..."). Below
+    CPython 3.13 it suppresses the misleading "(default: None)" argparse stamps onto a
+    required option too. This tool has none today, so binding it here is what keeps
+    that true of the option added next.
     """
 
 
@@ -75,27 +73,28 @@ DESCRIPTION = (
 )
 
 # Prerequisites and exit codes live in the epilog, not in help= strings. This tool
-# only emits the record; rendering it is the consumer's business -- see
-# album_scan.md, "Who consumes this record".
+# only emits the record; rendering it is the consumer's business (see
+# album_scan.md, "Who consumes this record").
 EPILOG = (
     "Prerequisites:\n"
     "  --source folder (the default) needs a music library laid out as\n"
-    "  <library>/Artist/Album/, and reads each album's tracks, year and\n"
+    "  <library>/Artist/Album/, and reads each album's tracks, year, and\n"
     "  favorites from its own files' ID3 tags. --source music and auto need\n"
-    "  Music.app installed, running and scriptable (macOS only; System\n"
+    "  Music.app installed, running, and scriptable (macOS only; System\n"
     "  Settings > Privacy & Security > Automation must allow it), and the\n"
     "  apple-music-toolbox, found by --toolbox, then $APPLE_MUSIC_TOOLBOX,\n"
     "  then a clone of it beside this one. Run by hand whenever a fresh\n"
     "  record is wanted; never as a build step.\n"
     "\n"
     "What a run spends:\n"
-    "  Network: TWO iTunes Search requests PER ALBUM recorded, because\n"
+    "  Network: two iTunes Search requests per album recorded, because\n"
     "  resolving one cover pools an artist-and-album query with an\n"
-    "  artist-alone one and sends both -- so --count 3 spends six. Pass\n"
-    "  --no-artwork to stay fully offline.\n"
+    "  artist-alone one and sends both, so --count 3 spends six, plus at\n"
+    "  most two artist-catalog lookups for an album neither search finds.\n"
+    "  Pass --no-artwork to stay fully offline.\n"
     "  Music.app, as local osascript subprocesses (never network):\n"
     "  --source folder runs none; --source music and auto run one\n"
-    "  date-added query per run, then one query PER ALBUM Music.app named\n"
+    "  date-added query per run, then one query per album Music.app named\n"
     "  for its counts and year, unless --no-favorites. Auto's fallback\n"
     "  reads the folder's tags instead and adds no query.\n"
     "\n"

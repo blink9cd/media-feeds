@@ -1,8 +1,8 @@
-"""The response body is read with a size cap and a deadline, through the REAL seam.
+"""The response body is read with a size cap and a deadline, through the real seam.
 
 `_read_body` is proved on an in-memory fake with an injected clock, so the deadline is
 a matter of readings rather than waiting. That alone cannot show `_real_fetch` uses
-it -- a bounded reader nobody calls passes every test of its own -- so the loopback
+it (a bounded reader nobody calls passes every test of its own), so the loopback
 class below stands up a real HTTP server on the loopback interface and calls the real
 `_real_fetch` against it: a body larger than the cap and a body that drips slower than
 the deadline must each be refused, quickly, and a normal body must come back whole.
@@ -42,7 +42,7 @@ _BIG_BODY = b"x" * (4 * _SMALL_LIMIT_BYTES)
 
 #: The drip: this many single bytes, this far apart, against a deadline that passes
 #: well before the body completes. The margin is what keeps the outcome independent
-#: of scheduling -- however late the client reads, the body cannot have finished.
+#: of scheduling: however late the client reads, the body cannot have finished.
 _DRIP_BYTES = 20
 _DRIP_INTERVAL_SECONDS = 0.05
 _SMALL_DEADLINE_SECONDS = 0.2
@@ -58,8 +58,8 @@ _OK_BODY = b'{"resultCount": 0, "results": []}'
 class _FakeResponse:
     """A response exposing only `read1`, handing out the given chunks in order.
 
-    Deliberately WITHOUT a `read` method: a reader that fell back to `read()` or
-    `read(n)` -- the calls a dripping server can hold for a socket timeout per byte --
+    Deliberately without a `read` method: a reader that fell back to `read()` or
+    `read(n)` (the calls a dripping server can hold for a socket timeout per byte)
     fails these tests with an `AttributeError` instead of passing by accident.
     """
 
@@ -104,7 +104,7 @@ class ReadBodyTest(unittest.TestCase):
 
     def test_each_read_asks_for_at_most_the_chunk_size(self) -> None:
         # The size handed to `read1` is a ceiling per call, not an amount waited for;
-        # pinning it keeps a future `read(n)` -- which DOES wait for n -- from
+        # pinning it keeps a future `read(n)` (which does wait for n) from
         # inheriting a size that would then block for a whole chunk.
         response = _FakeResponse([b"ab", b"cd"])
         _read_body(
@@ -190,7 +190,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
             try:
                 self.wfile.write(b"x")
             except OSError:
-                # The client gave up mid-body, which is exactly what the deadline test
+                # The client gave up mid-body, which is what the deadline test
                 # expects it to do; nothing is owed to a peer that has gone.
                 return
             time.sleep(_DRIP_INTERVAL_SECONDS)
@@ -259,9 +259,9 @@ class RealFetchLoopbackTest(unittest.TestCase):
             _real_fetch(self._url("/big"), _SOCKET_TIMEOUT_SECONDS)
 
     def test_a_body_dripping_past_the_deadline_is_refused(self) -> None:
-        # The message is asserted, not just the type: since Python 3.10 a socket
-        # timeout IS a `TimeoutError`, and only the deadline's own wording proves it
-        # was the deadline -- not the socket -- that ended the read.
+        # The message is asserted as well as the type: since Python 3.10 a socket
+        # timeout is a `TimeoutError`, and only the deadline's own wording proves it
+        # was the deadline, not the socket, that ended the read.
         with self.assertRaisesRegex(TimeoutError, "still arriving"):
             _real_fetch(self._url("/drip"), _SOCKET_TIMEOUT_SECONDS)
 

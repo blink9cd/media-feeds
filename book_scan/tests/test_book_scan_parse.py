@@ -30,13 +30,13 @@ class TestNewestBook(unittest.TestCase):
         self.items = feed_read.feed_items(_FIXTURE)
 
     def test_the_newest_READ_book_wins_not_the_newest_ADDED(self) -> None:
-        # THE Goodreads finding, measured 2026-08-31 on a real feed: the shelf RSS is
-        # ordered by user_date_added, NOT user_read_at. There the top 3 coincided but
-        # the 4th and 5th BY READ DATE sat at feed positions 5 and 6, so taking
-        # items[0] is WRONG even where it happens to look right. This fixture's feed
-        # order and read order disagree AT THE TOP: feed position 0 ("An Early
+        # The Goodreads finding, measured 2026-08-31 on a real feed: the shelf RSS is
+        # ordered by user_date_added, not user_read_at. There the top 3 coincided but
+        # the 4th and 5th by read date sat at feed positions 5 and 6, so taking
+        # items[0] is wrong even where it happens to look right. This fixture's feed
+        # order and read order disagree at the top: feed position 0 ("An Early
         # Addition") was read in March, six months before the true winner ("The Later
-        # Read") at feed position 2 -- so a feed-order implementation fails here, not
+        # Read") at feed position 2, so a feed-order implementation fails here, not
         # on some deeper item a shallow test could miss.
         items = feed_read.feed_items(_FIXTURE)
         self.assertEqual(items[0].findtext("title"), "An Early Addition")
@@ -50,14 +50,14 @@ class TestNewestBook(unittest.TestCase):
         # in this suite an assertIsNone (unrated / missing-tag), a mutation making
         # _rating always return None would pass the whole suite untouched. "The Later Read" is rated 5.
         self.assertEqual(record["rating"], 5)
-        # Pinned on the FIXTURE, not only on the synthetic items below: this item
+        # Pinned on the fixture, not only on the synthetic items below: this item
         # carries `book_published` alongside every sibling element a real shelf item
-        # has, so it proves the year survives the full-item path, not just a
+        # has, so it proves the year survives the full-item path, beyond a
         # three-element stub.
         self.assertEqual(record["year"], "2023")
 
     def test_a_single_digit_day_read_date_parses(self) -> None:
-        # 'Sat, 1 Aug 2026 ...' -- 4 of the 49 items on the real feed measured were
+        # 'Sat, 1 Aug 2026 ...': 4 of the 49 items on the real feed measured were
         # this shape. A strptime %d accepts an unpadded day too, so this pins the
         # feed's real shape, not a parser choice (feed_read.rfc822_date's docstring
         # gives the reason for parsedate_to_datetime). The raw string is pinned as
@@ -85,10 +85,10 @@ class TestNewestBook(unittest.TestCase):
         self.assertEqual(record["read"], "2026-06-01")
 
     def test_the_LARGE_image_variant_is_chosen(self) -> None:
-        # book_image_url and book_small_image_url are BOTH _SX50_ -- 50 pixels wide,
+        # book_image_url and book_small_image_url are both _SX50_, 50 pixels wide and
         # unusable on a card; only book_large_image_url (_SX318_) is big enough.
         # "The Later Read" carries all four size variants (see the fixture), so this
-        # proves the LARGE one specifically was chosen over the other three, not
+        # proves the large one specifically was chosen over the other three, not
         # merely that some cover was found.
         records = book_scan.newest_books(feed_read.feed_items(_FIXTURE), 1)
         record = records[0]
@@ -97,7 +97,7 @@ class TestNewestBook(unittest.TestCase):
 
     def test_a_book_with_no_large_image_records_none(self) -> None:
         # "No Cover Cottage" carries book_image_url/small/medium but no
-        # book_large_image_url element at all -- the cover must degrade to None
+        # book_large_image_url element at all: the cover must degrade to None
         # rather than silently falling back to one of the unusable smaller variants.
         items = feed_read.feed_items(_FIXTURE)
         item = next(i for i in items if i.findtext("title") == "No Cover Cottage")
@@ -131,7 +131,7 @@ class TestNewestBook(unittest.TestCase):
         self.assertIsNone(record["rating"])
 
     def test_the_publication_year_is_read_from_the_feed(self) -> None:
-        # `book_published` is a BARE year in this feed (e.g. "2018"), not a date --
+        # `book_published` is a bare year in this feed (e.g. "2018"), not a date,
         # so it is carried through as the string it already is, matching
         # FilmRecord.year's existing `str | None` shape rather than inventing a
         # second convention (an int) for the same concept across two sibling tools.
@@ -147,7 +147,7 @@ class TestNewestBook(unittest.TestCase):
     def test_a_missing_publication_year_is_none_not_empty_string(self) -> None:
         # The card omits the line on None; an empty string would render a blank row.
         # This is the whole reason `_year` is a statement-form if/else rather than a
-        # bare `.strip()`: "" and None are NOT interchangeable downstream.
+        # bare `.strip()`: "" and None are not interchangeable downstream.
         item = ET.fromstring(
             "<item><title>T</title><author_name>A</author_name>"
             "<user_read_at>Mon, 25 Aug 2026 10:00:00 -0700</user_read_at></item>"
@@ -157,7 +157,7 @@ class TestNewestBook(unittest.TestCase):
         self.assertIsNone(record["year"])
 
     def test_an_empty_publication_year_element_is_none_not_empty_string(self) -> None:
-        # The tag PRESENT but empty is a distinct input from the tag absent:
+        # The tag present but empty is a distinct input from the tag absent:
         # findtext returns "" for the first and None for the second, and both must
         # land on None. Without this case the empty-string arm is only ever reached
         # from the absent-tag side, so a `_year` that returned "" for a present-but-
@@ -179,7 +179,7 @@ class TestNewestBook(unittest.TestCase):
         # Vendor-drift insurance, not a live case: all 49 items on the real feed
         # measured carried a user_rating tag (Goodreads writes "0" for unrated, never
         # omits it). _rating's int() call raises ValueError when the tag is entirely
-        # absent (findtext returns None, so int("") is attempted) -- that except
+        # absent (findtext returns None, so int("") is attempted); that except
         # branch has no case anywhere else in this fixture, since every item above
         # supplies a plain-digit user_rating (including the literal "0" case).
         item = ET.fromstring(
@@ -224,10 +224,10 @@ class TestNewestBook(unittest.TestCase):
 class TestCoverAtWidth(unittest.TestCase):
     """Re-requesting a Goodreads cover at another width.
 
-    MEASURED 2026-09-01 against a real cover: `_SX<n>_` scales by width and is
-    honored DOWNWARD only. Above the book's own master image Goodreads silently
-    returns the master with a 200 -- `_SX400_`, `_SX636_`, `_SX800_` and no token at
-    all all returned the identical 348x475 image -- so a larger number buys nothing
+    Measured 2026-09-01 against a real cover: `_SX<n>_` scales by width and is
+    honored downward only. Above the book's own master image Goodreads silently
+    returns the master with a 200 (`_SX400_`, `_SX636_`, `_SX800_`, and no token at
+    all returned the identical 348x475 image), so a larger number buys nothing
     and quietly lies about the size it names. Each book's master differs, so no
     allowlist can catch that here; `book_scan.md` records the ceiling instead.
     """
@@ -241,9 +241,28 @@ class TestCoverAtWidth(unittest.TestCase):
         )
 
     def test_a_url_carrying_no_sizing_token_is_returned_verbatim(self) -> None:
-        # Goodreads serves the master with no token at all; there is nothing to
-        # rewrite, and the URL is still honest about its own size.
+        # Outside Goodreads' cover path there is no known token to add: the URL is
+        # left alone, and stays honest about its own size.
         url = "https://images.example.invalid/books/a.jpg"
+        self.assertEqual(book_scan.cover_at_width(url, 250), url)
+
+    def test_a_tokenless_goodreads_master_is_given_the_token(self) -> None:
+        # Regression: a book page's og:image is the master with
+        # no token, so `--cover-width` never applied and the card carried covers up
+        # to 5.6 times the bytes. Measured 2026-10-28: both hosts honor an inserted
+        # `._SX318_` (a 454-pixel master came back 318 wide, 68,553 to 14,329 bytes).
+        for host in ("m.media-amazon.com", "i.gr-assets.com"):
+            with self.subTest(host=host):
+                base = f"https://{host}/images/S/compressed.photo.goodreads.com/books/1700000000i/7000001"
+                self.assertEqual(
+                    book_scan.cover_at_width(f"{base}.jpg", 250),
+                    f"{base}._SX250_.jpg",
+                )
+
+    def test_a_goodreads_cover_with_another_modifier_is_returned_verbatim(self) -> None:
+        # `_SY475_` scales by height; adding a width token beside it would ask the
+        # CDN for two sizes at once, so only a bare master is given the token.
+        url = "https://i.gr-assets.com/images/S/compressed.photo.goodreads.com/books/1700000000l/7000002._SY475_.jpg"
         self.assertEqual(book_scan.cover_at_width(url, 250), url)
 
     def test_a_non_positive_width_is_refused(self) -> None:

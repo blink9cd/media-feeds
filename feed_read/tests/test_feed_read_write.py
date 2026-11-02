@@ -156,7 +156,7 @@ class TestWriteRecords(unittest.TestCase):
 
     def test_a_symlink_at_the_old_fixed_temp_name_is_never_touched(self) -> None:
         # The temp file used to be <name>.tmp, a fixed name: a symlink planted there
-        # (one committed into the checkout the tools write into) was written THROUGH
+        # (one committed into the checkout the tools write into) was written through
         # into its target, and the link itself was then renamed onto the record.
         # An exclusively-opened temp file under an unpredictable name never meets
         # the link: the victim stays byte-identical, the link stays where it was,

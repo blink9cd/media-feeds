@@ -26,7 +26,7 @@ _FEED = b"""<?xml version="1.0" encoding="UTF-8"?>
 
 
 # A classic "billion laughs" shape: a DOCTYPE declaring an internal entity. The guard
-# must reject this on the DOCTYPE alone, before ET.fromstring ever sees it -- there is
+# must reject this on the DOCTYPE alone, before ET.fromstring ever sees it; there is
 # no need for the entity to actually be referenced anywhere in the body.
 _DOCTYPE_FEED = b"""<?xml version="1.0"?>
 <!DOCTYPE rss [<!ENTITY x "y">]>
@@ -36,7 +36,7 @@ _DOCTYPE_FEED = b"""<?xml version="1.0"?>
 
 # The same shape as text, so it can be encoded in each width expat auto-detects. In
 # UTF-16 every ASCII letter is interleaved with a NUL byte, so no raw-bytes search
-# for `<!DOCTYPE` can see it, while expat still parses it -- and expands its entity.
+# for `<!DOCTYPE` can see it, while expat still parses it and expands its entity.
 _DOCTYPE_TEXT = (
     '<?xml version="1.0"?>'
     '<!DOCTYPE rss [<!ENTITY x "y">]>'
@@ -44,7 +44,7 @@ _DOCTYPE_TEXT = (
 )
 
 
-# A "<!doctype" string INSIDE a CDATA section: inert text, not a declaration. It
+# A "<!doctype" string inside a CDATA section: inert text, not a declaration. It
 # parses to one item whose title is the literal CDATA string, and a guard that reads
 # the parser's own DOCTYPE event never sees it as markup.
 _CDATA_LOOK_ALIKE_FEED = b"""<?xml version="1.0"?>
@@ -111,7 +111,7 @@ class TestFeedItems(unittest.TestCase):
     def test_a_lowercase_doctype_keyword_is_still_refused(self) -> None:
         # Control, not a regression case: expat requires the exact-case keyword, so
         # a lowercase declaration is malformed XML and reaches the caller as the
-        # same ValueError a DOCTYPE does -- there is no case a hostile body can pick
+        # same ValueError a DOCTYPE does, so there is no case a hostile body can pick
         # that parses.
         with self.assertRaises(ValueError):
             feed_read.feed_items(b'<?xml version="1.0"?><!doctype rss><rss/>')

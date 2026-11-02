@@ -6,7 +6,7 @@ tool can render whole, and a partial credit is worse than none (the ruling behin
 `languagefallback`, in wikidata_director.md), so `directors_for` answers None for it
 without making the labels request at all.
 
-`fetch` is injected here exactly as it is in the parent suite, so nothing in this file
+`fetch` is injected here just as it is in the parent suite, so nothing in this file
 reaches the network.
 """
 

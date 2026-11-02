@@ -1,10 +1,10 @@
 """Finding the apple-music-toolbox: `--toolbox`, then the environment, then a search.
 
 The toolbox is a separate project, imported only when `--source music` or `auto` asks
-for Music.app. These cases build every candidate layout in a temporary folder -- the
-toolbox's two tool folders hold an empty module each, which is all the lookup checks --
+for Music.app. These cases build every candidate layout in a temporary folder (the
+toolbox's two tool folders hold an empty module each, which is all the lookup checks),
 so none of them depends on where this checkout sits or on what is installed beside it.
-Nothing here imports a toolbox module, spawns `osascript` or reaches the network.
+Nothing here imports a toolbox module, spawns `osascript`, or reaches the network.
 """
 
 from __future__ import annotations
@@ -57,11 +57,15 @@ class LocateToolboxTest(unittest.TestCase):
         home: Path | None = None,
         uid: int | None = None,
     ) -> Path:
-        # The home folder and the user id are injected, never read from the host:
-        # `root` is the home unless a case names another, and the user id is the one
-        # `root` belongs to, so every folder the case builds is trusted unless it
-        # says not.
-        expected = self.root.stat().st_uid if uid is None else uid
+        # The home folder is injected, never read from the host: `root` is the home
+        # unless a case names another. The user id is the one the host itself would
+        # answer, so every folder the case builds is trusted unless it says not: on
+        # POSIX that is the user `root` belongs to, since this process made it, and
+        # on Windows it is None, which checks nothing. Windows' `st_uid` is a
+        # stand-in 0 while its directories report every write bit, so injecting
+        # `root`'s `st_uid` there would refuse every folder the product itself never
+        # checks.
+        expected = apple_source.current_uid() if uid is None else uid
         return apple_source.locate_toolbox(
             option,
             environ=environ,
@@ -95,7 +99,7 @@ class LocateToolboxTest(unittest.TestCase):
         sibling = _make_toolbox(self.root / "apple_music_toolbox")
         self.assertEqual(self._locate(None, {apple_source.TOOLBOX_ENV: ""}), sibling)
 
-    def test_the_search_finds_the_monorepo_project_beside_an_ancestor(self) -> None:
+    def test_the_search_finds_the_underscored_toolbox_beside_an_ancestor(self) -> None:
         sibling = _make_toolbox(self.root / "apple_music_toolbox")
         self.assertEqual(self._locate(None, {}), sibling)
 

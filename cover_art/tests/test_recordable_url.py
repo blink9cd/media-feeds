@@ -60,7 +60,7 @@ _HOSTILE_URLS = {
 
 
 def _hit(thumb: object) -> bytes:
-    """A search reply holding one candidate that verifies as REF, with `thumb` as its art."""
+    """A search reply holding one candidate that verifies as `REF`, with `thumb` as its art."""
     result = {
         "artistName": "Artist A",
         "collectionName": "Record A",

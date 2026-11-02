@@ -1,4 +1,4 @@
-"""The folder source's facts: tracks, year and favorites read from the album folder.
+"""The folder source's facts: tracks, year, and favorites read from the album folder.
 
 Every library here is built in a temporary folder, and every tag is written by mutagen
 into an otherwise empty `.mp3`, which is all an ID3 reader needs: the frames sit in the

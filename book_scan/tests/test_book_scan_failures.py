@@ -24,20 +24,20 @@ _TOOL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_TOOL_ROOT))
 sys.path.insert(0, str(_TOOL_ROOT.parent / "feed_read"))
 
-import book_scan  # noqa: E402 - import follows the sys.path bootstrap above
+from _book_scan_offline import offline_main  # noqa: E402 - follows the sys.path bootstrap above
 import feed_read  # noqa: E402 - import follows the sys.path bootstrap above
 
 _FIXTURE = (_TOOL_ROOT / "fixtures" / "shelf.xml").read_bytes()
 
 # A feed whose one item has no usable date at all: well-formed, and holding nothing
-# this tool can record -- the exit-1 case, as test_book_scan_cli.py's own fixture has it.
+# this tool can record: the exit-1 case, as test_book_scan_cli.py's own fixture has it.
 _NO_BOOK_FEED = (
     b'<rss version="2.0"><channel><item><title>Undated</title></item></channel></rss>'
 )
 
 # A shelf whose book title carries a C1 control character. C1, not ESC, because
-# MEASURED 2026-09-22 expat refuses a raw C0 character and refuses `&#27;` as well,
-# while XML 1.0 admits U+0080-U+009F unescaped -- so this is the class that can
+# Measured 2026-09-22: expat refuses a raw C0 character and refuses `&#27;` as well,
+# while XML 1.0 admits U+0080-U+009F unescaped, so this is the class that can
 # genuinely reach the summary line from a vendor's feed. U+009B is the control
 # sequence introducer.
 _C1_TITLE_FEED = (
@@ -85,7 +85,7 @@ class FailureStreamTest(unittest.TestCase):
         """Run `main` with the given fetch seam: (code, stdout, stderr)."""
         stdout, stderr = io.StringIO(), io.StringIO()
         with redirect_stdout(stdout), redirect_stderr(stderr):
-            code = book_scan.main(
+            code = offline_main(
                 ["--user-id", _A_USER_ID, "--output", str(self.out)], fetch=fetch
             )
         return code, stdout.getvalue(), stderr.getvalue()
@@ -102,8 +102,8 @@ class FailureStreamTest(unittest.TestCase):
         # The summary echoes a vendor's title straight to a terminal. A control
         # character there is not text: it is an instruction to the terminal, and a
         # crafted title could rewrite the window title or wrap the line in an OSC 8
-        # hyperlink pointing anywhere. The record itself is unaffected -- it is JSON,
-        # read by a browser -- so this is only about what the operator's terminal
+        # hyperlink pointing anywhere. The record itself is unaffected (it is JSON,
+        # read by a browser), so this is only about what the operator's terminal
         # receives.
         code, stdout, stderr = self._run(_fetch_returning(_C1_TITLE_FEED))
         self.assertEqual(code, 0)
@@ -145,6 +145,36 @@ class FailureStreamTest(unittest.TestCase):
         self.assertTrue(error.fp.closed, "the HTTP error response was left open")
         self.assertEqual(code, 2)
         self.assertIn("503", stderr)
+
+    def test_a_feed_the_server_calls_gone_exits_3_with_its_response_closed(
+        self,
+    ) -> None:
+        # 404 and 410 are the server's final answer, so the exit says so and the
+        # scheduled refresh skips its retries (the Goodreads
+        # shelf RSS answered 404 on every attempt).
+        for status in (404, 410):
+            with self.subTest(status=status):
+                error = urllib.error.HTTPError(
+                    "https://example.invalid/", status, "gone", _NO_HEADERS, None
+                )
+                code, stdout, stderr = self._run(_fetch_raising(error))
+                self.assertEqual(code, 3)
+                self.assertTrue(
+                    error.fp.closed, "the HTTP error response was left open"
+                )
+                self.assertIn("could not read the shelf feed", stderr)
+                self.assertIn(str(status), stderr)
+                self.assertEqual(stdout, "")
+
+    def test_a_refusal_that_may_pass_stays_a_retryable_exit_2(self) -> None:
+        # A 403 can be a block that lifts, a 429 a rate limit: worth the retries.
+        for status in (403, 429):
+            with self.subTest(status=status):
+                error = urllib.error.HTTPError(
+                    "https://example.invalid/", status, "refused", _NO_HEADERS, None
+                )
+                code, _stdout, _stderr = self._run(_fetch_raising(error))
+                self.assertEqual(code, 2)
 
 
 if __name__ == "__main__":

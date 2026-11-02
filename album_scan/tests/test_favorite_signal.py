@@ -3,10 +3,10 @@
 Three signals, one per way a count can be read: Music.app's own `favorited` flag
 (`music.favorited`), Music.app's user rating at or above N stars (`music.rating>=N`),
 and the highest ID3 POPM rating on each track at or above N stars (`id3.popm>=N`). A
-record whose favorites were not read -- declined, unanswerable, or carried by no tag --
+record whose favorites were not read (declined, unanswerable, or carried by no tag)
 says null, and so does its count.
 
-The Music.app cases stand a FAKE toolbox in for the real one, shaped like its two
+The Music.app cases stand a fake toolbox in for the real one, shaped like its two
 functions and patched in where `main` opens it, so these run with no toolbox installed
 and no `osascript` at all. The folder cases write real ID3 tags into empty `.mp3` files.
 """

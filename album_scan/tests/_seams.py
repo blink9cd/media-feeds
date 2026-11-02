@@ -1,17 +1,17 @@
 """The two boundary fakes an offline test injects into `main`: each raises if reached.
 
-`main`'s defaults are the real boundaries -- `_real_run` spawns an `osascript`
-process and `_real_fetch` opens an HTTPS connection -- and a flag such as `--source
+`main`'s defaults are the real boundaries (`_real_run` spawns an `osascript`
+process and `_real_fetch` opens an HTTPS connection), and a flag such as `--source
 folder`, `--no-favorites` or `--no-artwork` keeps a call off one of them only while
-the code honoring that flag is correct, which is exactly what a regression, or a
+the code honoring that flag is correct, which is what a regression, or a
 mutant, breaks. So every `main` call passes both `run=` and `fetch=` (the aggregator's
 AST guard fails one that does not), and a case that needs neither boundary passes
 these two, which turn any reach into a failure naming the boundary reached. A case
-that needs one boundary to ANSWER defines its own answering fake beside its tests and
+that needs one boundary to answer defines its own answering fake beside its tests and
 still passes one of these for the other.
 
 It also holds the one Windows skip the POSIX-filesystem cases share, so each guard
-names the same reason instead of restating it, and the skip every case driving the REAL
+names the same reason instead of restating it, and the skip every case driving the real
 apple-music-toolbox shares: those exercise the toolbox's own parsing of a faked
 `osascript` reply, so they need the toolbox installed where `album_scan` would find it,
 which a standalone clone of this project need not have. `music_answering` is the fake

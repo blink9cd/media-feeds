@@ -1,7 +1,7 @@
 """The record write: its exact bytes, the parents it creates, and how it fails.
 
-Everything here is about `--output` itself -- the bytes that land there, the directory
-created above it, and what a write that cannot complete leaves behind -- rather than
+Everything here is about `--output` itself (the bytes that land there, the directory
+created above it, and what a write that cannot complete leaves behind) rather than
 about which film the CLI picks. Every test injects `fetch`, passes `--no-director` so
 the lookup seam is never reached, and points `--output` under a
 `tempfile.TemporaryDirectory()`; nothing here touches the network.
@@ -17,6 +17,7 @@ import json
 import os
 import sys
 import unittest
+from collections.abc import Mapping
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -46,6 +47,12 @@ def _fetch_returning(body: bytes) -> feed_read.Fetcher:
     return fetch
 
 
+def _tmdb_with_poster(url: str, timeout: float, headers: Mapping[str, str]) -> bytes:
+    """A fake TMDB fetch: every film has the same placeholder poster, no request made."""
+    del url, timeout, headers
+    return b'{"poster_path": "/a-placeholder-poster.jpg"}'
+
+
 class RecordWriteTest(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = TemporaryDirectory()
@@ -55,10 +62,17 @@ class RecordWriteTest(unittest.TestCase):
     def _run(self, out: Path) -> tuple[int, str, str]:
         """Run `main` against the fixture, writing to `out`: (code, stdout, stderr)."""
         stdout, stderr = io.StringIO(), io.StringIO()
-        with redirect_stdout(stdout), redirect_stderr(stderr):
+        # A placeholder token, pinned so a real one in the shell running the suite
+        # can change nothing; the TMDB seam above answers without a request.
+        with (
+            patch.dict(os.environ, {film_scan.TMDB_TOKEN_ENV: "a-placeholder-token"}),
+            redirect_stdout(stdout),
+            redirect_stderr(stderr),
+        ):
             code = film_scan.main(
                 ["--username", _A_USERNAME, "--no-director", "--output", str(out)],
                 fetch=_fetch_returning(_FIXTURE),
+                poster_fetch=_tmdb_with_poster,
             )
         return code, stdout.getvalue(), stderr.getvalue()
 
@@ -83,8 +97,8 @@ class RecordWriteTest(unittest.TestCase):
         self,
     ) -> None:
         # The OS refuses the rename onto a directory. That must come back as the
-        # documented exit 2 with one line on stderr -- not a traceback, and not the
-        # exit 1 that means "no film found" -- and the temp file must not survive it.
+        # documented exit 2 with one line on stderr (not a traceback, and not the
+        # exit 1 that means "no film found"), and the temp file must not survive it.
         out = self.root / "films.json"
         out.mkdir()
         code, _stdout, stderr = self._run(out)
@@ -94,8 +108,8 @@ class RecordWriteTest(unittest.TestCase):
 
     def test_a_failed_rename_keeps_the_previous_record_byte_for_byte(self) -> None:
         # The atomic rename is what guarantees a reader never sees a half-written
-        # record; when the rename itself fails, the old file must be untouched --
-        # not truncated, not partly rewritten -- and the temp file removed.
+        # record; when the rename itself fails, the old file must be untouched (not
+        # truncated, not partly rewritten) and the temp file removed.
         out = self.root / "films.json"
         old_content = '[{"title": "Old Film", "watched": "2020-01-01"}]'
         out.write_text(old_content, encoding="utf-8", newline="\n")

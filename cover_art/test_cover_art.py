@@ -1,4 +1,4 @@
-"""Artwork resolution against a FAKE fetcher.
+"""Artwork resolution against a fake fetcher.
 
 No test in this file touches the network. The live boundary test lives in
 tests/test_live_artwork.py, whose live class skips when offline; `load_tests` below
@@ -29,11 +29,11 @@ from hypothesis import (  # noqa: E402 - import follows the sys.path bootstrap a
     strategies as st,
 )
 
-# A REGISTERED profile, loaded here before any class body, never an `@settings`
-# decorator: a `@given` test snapshots its settings when it is DECORATED, so a load
-# after the class bodies would be a no-op, and `fuzz_gate --explore` re-applies its
+# A registered profile, loaded here before any class body, never an `@settings`
+# decorator: a `@given` test snapshots its settings when it is decorated, so a load
+# after the class bodies would be a no-op, and a longer fuzzing run re-applies its
 # own settings object to each target, which Hypothesis refuses on a function already
-# carrying one. Its own NAME: `load_profile` sets one global default, so a
+# carrying one. Its own name: `load_profile` sets one global default, so a
 # name shared with another module's profile would let import order decide which
 # settings each had snapshotted.
 #
@@ -62,11 +62,11 @@ def fake_body(payload: object) -> bytes:
 
 
 def matching_result(**overrides: object) -> dict[str, object]:
-    """A search result that VERIFIES as REF's album.
+    """A search result that verifies as REF's album.
 
     A result is only used when it is demonstrably the album that was asked for, so a
-    fixture meaning "the store found it" has to carry the artist and title, not just an
-    artwork URL. A bare `{"artworkUrl100": ...}` means "some other album" -- accepting
+    fixture meaning "the store found it" has to carry the artist and title as well as
+    an artwork URL. A bare `{"artworkUrl100": ...}` means "some other album"; accepting
     that payload is the defect this suite guards.
     """
     result: dict[str, object] = {
@@ -103,8 +103,8 @@ class ArtworkUrlTest(unittest.TestCase):
         self.assertIsNone(artwork_url(REF, fetch=lambda _u, _t: body).url)
 
     def test_the_default_format_is_webp(self) -> None:
-        # MEASURED 2026-09-01: the same 400x400 art is 14,192 bytes as WebP against
-        # 34,757 as JPEG -- 59% smaller at identical dimensions, indistinguishable at
+        # Measured 2026-09-01: the same 400x400 art is 14,192 bytes as WebP against
+        # 34,757 as JPEG, 59% smaller at identical dimensions, indistinguishable at
         # the size it is rendered at.
         body = fake_body({"resultCount": 1, "results": [matching_result()]})
         match = artwork_url(REF, fetch=lambda _u, _t: body)
@@ -116,7 +116,7 @@ class ArtworkUrlTest(unittest.TestCase):
         self.assertEqual(match.url, "https://example.com/a/400x400bb.jpg")
 
     def test_only_the_FINAL_extension_is_rewritten(self) -> None:
-        # THE trap. A real artwork URL carries the source file's own ".jpg" mid-path
+        # The trap. A real artwork URL carries the source file's own ".jpg" mid-path
         # (".../075679854247.jpg/100x100bb.jpg"), so a naive replace of ".jpg" would
         # corrupt the path and 404. Only the last segment's extension may change.
         body = fake_body(
@@ -135,7 +135,7 @@ class ArtworkUrlTest(unittest.TestCase):
         )
 
     def test_the_requested_width_is_what_gets_substituted(self) -> None:
-        # MEASURED 2026-09-01: Apple's resizer honored every width tried exactly, so
+        # Measured 2026-09-01: Apple's resizer honored every width tried exactly, so
         # the size is the caller's to choose rather than a constant fixed in here.
         body = fake_body({"resultCount": 1, "results": [matching_result()]})
         match = artwork_url(REF, fetch=lambda _u, _t: body, width=250)
@@ -154,7 +154,7 @@ class ArtworkUrlTest(unittest.TestCase):
         self.assertIsNone(artwork_url(REF, fetch=lambda _u, _t: body).url)
 
     def test_a_non_string_artwork_field_yields_no_url(self) -> None:
-        # The field exists but is the wrong type (e.g. a malformed upstream record) --
+        # The field exists but is the wrong type (e.g. a malformed upstream record),
         # a distinct branch from the field being absent entirely.
         body = fake_body(
             {"resultCount": 1, "results": [matching_result(artworkUrl100=12345)]}
@@ -162,14 +162,14 @@ class ArtworkUrlTest(unittest.TestCase):
         self.assertIsNone(artwork_url(REF, fetch=lambda _u, _t: body).url)
 
     def test_a_results_field_that_is_not_a_list_yields_no_url(self) -> None:
-        # A 2xx body of the wrong SHAPE -- valid JSON, wrong contract. Distinct from
+        # A 2xx body of the wrong shape: valid JSON, wrong contract. Distinct from
         # unparseable, and reachable from a proxy or an API change.
         body = fake_body({"resultCount": 1, "results": {"not": "a list"}})
         self.assertIsNone(artwork_url(REF, fetch=lambda _u, _t: body).url)
 
     def test_the_right_album_with_no_release_date_still_yields_its_url(self) -> None:
         # The album is identified by name; the year is simply unavailable. The cover
-        # must still be used -- the year is a bonus, not a precondition.
+        # must still be used: the year is a bonus, not a precondition.
         body = fake_body(
             {"resultCount": 1, "results": [matching_result(releaseDate=None)]}
         )
@@ -189,8 +189,8 @@ class ArtworkUrlTest(unittest.TestCase):
         self,
     ) -> None:
         # `releaseDate` is remote input, and "²⁰²⁵" satisfies str.isdigit() while int()
-        # rejects it -- so an isdigit() year guard admits a value the conversion then
-        # refuses, raising ValueError out of the year parse at a call site OUTSIDE the try
+        # rejects it, so an isdigit() year guard admits a value the conversion then
+        # refuses, raising ValueError out of the year parse at a call site outside the try
         # that guards the search. Regression for that uncaught raise: the never-raises
         # contract has to hold for every digit-ish year, not only for text that is
         # obviously not a date like the case above.
@@ -205,7 +205,7 @@ class ArtworkUrlTest(unittest.TestCase):
         self,
     ) -> None:
         # The other half of why that guard is isdecimal() rather than the stricter
-        # `isascii() and isdigit()`: Arabic-Indic "٢٠٢٥" IS a real year and int()
+        # `isascii() and isdigit()`: Arabic-Indic "٢٠٢٥" is a real year and int()
         # parses it to 2025, so clamping to ASCII would stop the raise above by
         # discarding a good answer instead. This pins the accepted half, so
         # over-tightening the guard fails here rather than passing silently.
@@ -222,10 +222,10 @@ class ArtworkUrlTest(unittest.TestCase):
         # `collectionId` is remote input and is used as the pool's dedup key, so it
         # lands in a set. A JSON array or object there is legal JSON that decodes to
         # an unhashable list/dict, and an unguarded `key in seen` raises TypeError out
-        # of `artwork_url` -- from a line OUTSIDE the try that guards `_search`, so the
-        # never-raises contract breaks exactly as it would for the release year. An id
+        # of `artwork_url`, from a line outside the try that guards `_search`, so the
+        # never-raises contract breaks just as it would for the release year. An id
         # that cannot be hashed carries no usable identity, so it is treated as a
-        # MISSING one: the candidate is kept and simply never deduped against.
+        # missing one: the candidate is kept and simply never deduped against.
         for unusable in ([1, 2], {"a": 1}):
             with self.subTest(collection_id=unusable):
                 body = fake_body(
@@ -280,7 +280,7 @@ class ArtworkUrlTest(unittest.TestCase):
         artwork_url(REF, fetch=record)
         self.assertIn("An+Artist", seen[0])
         self.assertIn("A+Record", seen[0])
-        # BOTH queries run and are pooled before ranking. Returning after the first
+        # both queries run and are pooled before ranking. Returning after the first
         # lets the wrong album win: the store does not always use the library's name,
         # so the right record can appear only in the second.
         self.assertEqual(len(seen), 2)
@@ -297,14 +297,14 @@ class ArtworkUrlTest(unittest.TestCase):
         self.assertEqual(seen, [2.5, 2.5])
 
     def test_a_surrogate_in_the_artist_yields_no_url_rather_than_raising(self) -> None:
-        # Regression guard: with urllib.parse.urlencode OUTSIDE `_search`'s try
+        # Regression guard: with urllib.parse.urlencode outside `_search`'s try
         # block, a lone surrogate in ref.artist (or ref.album) raises
         # UnicodeEncodeError straight out of this "never raises" function.
         # Unreachable via a real macOS folder scan (APFS rejects such names), but
         # reachable when the folder scan runs off macOS, where a lossy filename decode
         # can hand this exact input. UnicodeEncodeError is a ValueError subclass,
         # already in `_search`'s except tuple, so building the query inside the try is
-        # the entire fix -- this test fails without that and passes with it.
+        # the entire fix: this test fails without that and passes with it.
         bad_ref = AlbumRef(
             artist="An Artist \udcff", album="A Record", added=dt.date(2026, 8, 30)
         )
@@ -320,9 +320,9 @@ class ArtworkUrlTest(unittest.TestCase):
 
 
 # The two halves of `str.isdigit()`, computed rather than listed so the split cannot
-# go stale against a new Unicode version. DECIMAL is the set `int()` accepts;
-# NON_DECIMAL is the rest of isdigit() -- superscripts and the like -- and a year
-# guard's bugs live exactly on that boundary. The scan costs ~0.09s at import, which
+# go stale against a new Unicode version. `DECIMAL` is the set `int()` accepts;
+# NON_DECIMAL is the rest of isdigit() (superscripts and the like), and a year
+# guard's bugs live on that boundary. The scan costs ~0.09s at import, which
 # is the price of not hardcoding a character table that would quietly rot.
 _DECIMAL_DIGITS = tuple(
     character
@@ -335,7 +335,7 @@ _NON_DECIMAL_DIGITS = tuple(
     if character.isdigit() and not character.isdecimal()
 )
 
-# A four-character year holding AT LEAST ONE non-decimal digit, built rather than
+# A four-character year holding at least one non-decimal digit, built rather than
 # sampled: drawing four characters from the combined pool leaves the interesting case
 # to chance, and chance is what a never-raises property must not depend on. Sampling
 # was measured: the class this constructs turned up in 13% of draws, and the whole
@@ -354,7 +354,7 @@ _date_like = st.builds(
     st.sampled_from(("", "-01-01", "-01-01T00:00:00Z")),
 )
 
-# Every type a JSON document can hand a field, CONTAINERS included -- a list or dict
+# Every type a JSON document can hand a field, containers included: a list or dict
 # is what makes an unhashable value reachable for a field used as a set key.
 _json_values = st.recursive(
     st.one_of(
@@ -371,28 +371,28 @@ _json_values = st.recursive(
     max_leaves=4,
 )
 
-# A body the parse can get THROUGH, which st.binary() cannot produce: arbitrary bytes
+# A body the parse can get through, which st.binary() cannot produce: arbitrary bytes
 # essentially never decode to JSON carrying a name-matching album, so every branch
-# past `json.loads` -- the dedup key, the year parse, the URL rewrite -- would sit
-# outside this target's input space. A ValueError in the year guard AND a TypeError
+# past `json.loads` (the dedup key, the year parse, the URL rewrite) would sit
+# outside this target's input space. A ValueError in the year guard and a TypeError
 # in the dedup key both passed a green fuzz gate that way.
 #
-# The two NAME fields are deliberately left realistic, so the candidate always
+# The two name fields are deliberately left realistic, so the candidate always
 # verifies as REF's album and the downstream path always runs. Fuzzing them too would
-# spend most draws on the no-match early return -- an axis already covered by
-# pick_album's own suite in tests/, by the DIFFERENT-album example test above, and by
+# spend most draws on the no-match early return, an axis already covered by
+# pick_album's own suite in tests/, by the different-album example test above, and by
 # the ref-side property test below. The gap was never the match; it was everything the
-# parse does to a field's VALUE afterwards.
+# parse does to a field's value afterward.
 #
 # Acceptance, measured rather than eyeballed: each real defect was reverted in turn and
-# this property run 10 times, each against a FRESH example database so every run is an
+# this property run 10 times, each against a fresh example database so every run is an
 # independent discovery rather than a replay. The year guard is caught 9/10, the dedup
-# key 10/10 -- against 1/5 for the year guard when the hazard was sampled for rather
+# key 10/10, against 1/5 for the year guard when the hazard was sampled for rather
 # than constructed by `_adversarial_year`. The two deterministic tests above are what
-# pin THOSE defects exactly; this target's job is the next one nobody has named yet.
+# pin those defects exactly; this target's job is the next one nobody has named yet.
 #
 # A thumbnail that is URL-shaped enough to reach the final-segment rewrite, with
-# generated text -- control characters and all -- in its path. A bare `_json_values`
+# generated text (control characters and all) in its path. A bare `_json_values`
 # string almost never starts with a scheme, so without this arm the rewrite and the
 # recording rule after it would only ever see refusals of the cheapest kind.
 _url_like = st.text(max_size=20).map(
@@ -418,23 +418,23 @@ class ArtworkUrlPropertyTest(unittest.TestCase):
 
     @given(st.one_of(st.binary(max_size=2048), _decodable_response_bodies))
     def test_fuzz_artwork_url(self, body: bytes) -> None:
-        # Whatever the endpoint returns -- truncated JSON, HTML, a proxy error page,
-        # binary noise, or a WELL-FORMED response whose field values are hostile --
+        # Whatever the endpoint returns (truncated JSON, HTML, a proxy error page,
+        # binary noise, or a well-formed response whose field values are hostile),
         # the caller gets a URL or None, never an exception. A cover that cannot be
-        # resolved is a normal outcome. And whatever IS returned satisfies the recording
+        # resolved is a normal outcome. And whatever is returned satisfies the recording
         # rule: a URL the page may put in an `<img src>`. Asserting the rule here, not
         # merely `str`, is what makes this property notice the rule's call site being
-        # removed -- the generated bodies carry hostile thumbnails on nearly every draw.
+        # removed: the generated bodies carry hostile thumbnails on nearly every draw.
         result = artwork_url(REF, fetch=lambda _u, _t: body)
         self.assertTrue(result.url is None or _is_recordable_url(result.url))
 
 
-# Printable text mixed with a deliberate chance of a lone surrogate -- the class of
+# Printable text mixed with a deliberate chance of a lone surrogate: the class of
 # input the folder scan, run off macOS, can hand artwork_url via a lossy filename
 # decode (surrogateescape), and specifically the class the response-body-only fuzz
 # target above cannot reach. Hypothesis's default st.text() never generates a lone
 # surrogate on its own (verified: 2000 samples, zero hits), so proving the
-# never-raises contract over THIS input space needs it explicitly in the alphabet,
+# never-raises contract over this input space needs it explicitly in the alphabet,
 # not merely a wide codepoint range.
 _hazardous_text = st.text(
     alphabet=st.one_of(
@@ -455,12 +455,12 @@ _ref_strategy = st.builds(
 class ArtworkUrlAlbumRefPropertyTest(unittest.TestCase):
     """The never-crash invariant, over arbitrary AlbumRef artist/album text.
 
-    A second, deliberately DIFFERENTLY-named property test rather than a second
-    `# fuzz-target`-matching `test_fuzz_artwork_url`: fuzz_gate requires only ONE
-    `test_fuzz_<name>` per marker, and a second one sharing that prefix without a
-    matching marker of its own would report a spurious ORPHAN_FUZZ_TEST warning.
+    A second, deliberately differently-named property test rather than a second
+    `# fuzz-target`-matching `test_fuzz_artwork_url`: a marker pairs with exactly one
+    `test_fuzz_<name>`, and a second one sharing that prefix without a matching
+    marker of its own would read as an orphan property test.
     `artwork_url` has exactly one `# fuzz-target` marker either way, already satisfied
-    by `test_fuzz_artwork_url` above; this class extends the INPUT SPACE that marker's
+    by `test_fuzz_artwork_url` above; this class extends the input space that marker's
     contract is proven over, not the marker count.
     """
 

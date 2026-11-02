@@ -1,32 +1,32 @@
 """One live call against the real `osascript` / Music.app boundary.
 
 Unit tests (`recently_added/test_recently_added.py`) fake the `run` seam,
-which proves the PARSING but not the CONTRACT: a renamed AppleScript property, a moved
+which proves the parsing but not the contract: a renamed AppleScript property, a moved
 dictionary, or Music.app's own response shape changing would leave every faked test
-green. This test is the only thing in the suite that would notice -- which requires it
-to FAIL, not skip, on a broken contract.
+green. This test is the only thing in the suite that would notice, which requires it
+to fail, not skip, on a broken contract.
 
 `newest_albums_from_music` never raises, so Music.app being absent, not running, not
-scriptable, or automation-denied would ALL come back as a plain `[]` --
+scriptable, or automation-denied would all come back as a plain `[]`,
 indistinguishable, from inside that function alone, from "reachable but nothing was
 added recently". Skipping in that case would defeat the whole point of this file, so
 reachability is decided separately, by the probe `_music_probe.py` holds for both live
-files, which calls the module's own `_real_run` directly (the one thing that does NOT
+files, which calls the module's own `_real_run` directly (the one thing that does not
 swallow a broken invocation): only a genuine `OSError`, a timeout, or a non-zero exit
-from a MINIMAL, read-only probe script counts as "unreachable" and skips. Once the
+from a minimal, read-only probe script counts as "unreachable" and skips. Once the
 probe succeeds, the contract assertion below runs unconditionally, so a moved API
-fails this test instead of blending into "maybe unavailable" -- as
+fails this test instead of blending into "maybe unavailable", as
 `cover_art/tests/test_live_artwork.py` does for the iTunes Search API boundary.
 
-A SECOND probe, `_any_recent_track_exists`, closes a related gap:
+A second probe, `_any_recent_track_exists`, closes a related gap:
 `newest_albums_from_music` returning `[]` on a reachable Music.app
-is ALSO ambiguous between "genuinely nothing added within the lookback window" (a
-legitimate state -- an empty library, or a long gap since the last refresh) and "the
+is also ambiguous between "genuinely nothing added within the lookback window" (a
+legitimate state: an empty library, or a long gap since the last refresh) and "the
 AppleScript contract broke" (a renamed property, a changed date format). Without this
 second probe, the assertion below would go red on any Mac with an empty library,
-which is not the failure this file exists to catch. Only a CONFIRMED, clean zero-count
-from that probe counts as emptiness and skips; anything else -- including the probe
-itself failing to answer -- falls through to the real assertion, so a broken contract
+which is not the failure this file exists to catch. Only a confirmed, clean zero-count
+from that probe counts as emptiness and skips; anything else, the probe itself failing
+to answer included, falls through to the real assertion, so a broken contract
 still fails loudly rather than blending into a skip.
 """
 
@@ -61,7 +61,7 @@ def _recent_count_script(lookback_days: int) -> str:
 
     Mirrors recently_added's own cutoff arithmetic exactly (the same lookback, the
     same "(current date) - (N * days)" expression), so this probe asks Music.app the
-    identical question the real contract depends on -- a bare count, not a track
+    identical question the real contract depends on: a bare count, not a track
     dump, for the same read-no-more-than-needed reason as the reachability probe in
     _music_probe.py.
     """
@@ -76,11 +76,11 @@ def _any_recent_track_exists(*, run: Runner, lookback_days: int) -> bool | None:
     answer at all.
 
     `run` is injectable, as `music_is_reachable`'s in `_music_probe.py` is, so every
-    branch here is provable without a real `osascript` process -- see
-    `RecentTrackExistsTest`. `None` covers an `OSError` from `run`, a TIMEOUT, and a
+    branch here is provable without a real `osascript` process; see
+    `RecentTrackExistsTest`. `None` covers an `OSError` from `run`, a timeout, and a
     non-zero exit: each means the same "date added" property the real query also
-    needs just failed to answer even a bare count, which is a CONTRACT problem, not
-    emptiness -- the caller must not treat it as a reason to skip. Only a clean,
+    needs just failed to answer even a bare count, which is a contract problem, not
+    emptiness: the caller must not treat it as a reason to skip. Only a clean,
     confirmed zero-count is genuine emptiness.
 
     The timeout arm is listed explicitly because `TimeoutExpired` is a
@@ -129,8 +129,8 @@ class RecentTrackExistsTest(unittest.TestCase):
         )
 
     def test_a_nonzero_exit_is_ambiguous_not_empty(self) -> None:
-        # e.g. the "date added" property itself no longer exists -- a contract
-        # break, which must NOT be mistaken for "nothing recent".
+        # e.g. the "date added" property itself no longer exists: a contract
+        # break, which must not be mistaken for "nothing recent".
         def run(_args: list[str], _timeout: float) -> subprocess.CompletedProcess[str]:
             return subprocess.CompletedProcess(
                 args=["osascript"], returncode=1, stdout="", stderr="error"
@@ -149,9 +149,9 @@ class RecentTrackExistsTest(unittest.TestCase):
         )
 
     def test_a_timeout_is_ambiguous_not_empty(self) -> None:
-        # A stalled boundary -- Music.app accepted the call and never answered, the
-        # shape an unanswerable automation-consent prompt takes -- reaches the caller
-        # as TimeoutExpired, which is a SubprocessError and NOT an OSError, so an
+        # A stalled boundary (Music.app accepted the call and never answered, the
+        # shape an unanswerable automation-consent prompt takes) reaches the caller
+        # as TimeoutExpired, which is a SubprocessError and not an OSError, so an
         # OSError-only handler would let it escape the helper instead of classifying.
         def run(_args: list[str], _timeout: float) -> subprocess.CompletedProcess[str]:
             raise subprocess.TimeoutExpired(["osascript"], 60.0)
@@ -168,7 +168,7 @@ class LiveMusicLookupTest(unittest.TestCase):
     def setUp(self) -> None:
         """Skip only for genuine unreachability or a confirmed-empty lookback
         window, both decided independently of the subject
-        (`newest_albums_from_music`) -- see module docstring. A probe that itself
+        (`newest_albums_from_music`); see the module docstring. A probe that itself
         could not answer (`None`) falls through to the real assertion below
         instead of skipping, so a broken contract still fails loudly rather than
         blending into a skip.
@@ -184,7 +184,7 @@ class LiveMusicLookupTest(unittest.TestCase):
         if _any_recent_track_exists(run=run, lookback_days=lookback) is False:
             self.skipTest(
                 "Music.app is reachable but reports no track added within the "
-                "lookback window -- a genuinely empty result, not a contract break"
+                "lookback window: a genuinely empty result, not a contract break"
             )
 
     def test_the_real_library_resolves_to_a_dated_album(self) -> None:
@@ -198,14 +198,14 @@ class LiveMusicLookupTest(unittest.TestCase):
             self.fail(
                 f"newest_albums_from_music raised instead of returning []: {exc!r}"
             )
-        # setUp already proved Music.app is reachable, so an empty list here is NOT
-        # "maybe unavailable" -- it means either the AppleScript contract has moved (a
+        # setUp already proved Music.app is reachable, so an empty list here is not
+        # "maybe unavailable": it means either the AppleScript contract has moved (a
         # renamed property, a changed date format) or genuinely nothing was added to
         # this library within the lookback window; this assertion turns that into a
         # loud failure rather than a silent pass.
         self.assertTrue(
             refs,
-            "Music.app is reachable but newest_albums_from_music returned [] -- "
+            "Music.app is reachable but newest_albums_from_music returned []: "
             "either the AppleScript contract (a property name, the date format) has "
             "moved, or no track was added within the lookback window",
         )

@@ -38,7 +38,7 @@ _GETEUID = getattr(os, "geteuid", None)
 _IS_ROOT = _GETEUID is not None and _GETEUID() == 0
 
 
-#: A search result that VERIFIES as the album these tests build: the matcher refuses a
+#: A search result that verifies as the album these tests build: the matcher refuses a
 #: candidate it cannot verify, so a bare artworkUrl100 records a null cover.
 _VERIFIABLE_RESULT = {
     "artistName": "An Artist",
@@ -63,7 +63,7 @@ def _music_says_nothing(
 
     A non-zero exit is the faithful stand-in: `album_facts` maps it to `None`, which
     is also what a real Music.app yields for these invented albums, so the records
-    these tests assert on are the same -- only the host call is gone.
+    these tests assert on are the same; only the host call is gone.
     """
     return subprocess.CompletedProcess(
         args=["osascript"], returncode=1, stdout="", stderr="no such album"
@@ -106,7 +106,7 @@ class CliTest(unittest.TestCase):
         )
         self.assertEqual(code, 0)
         # The written record file is always a JSON array, even at the default
-        # --count of one -- index [0] rather than parsing it as a bare object.
+        # --count of one, so index [0] rather than parsing it as a bare object.
         record = json.loads(out.read_text(encoding="utf-8"))[0]
         self.assertEqual(record["artist"], "An Artist")
         self.assertIsNone(record["artwork"])
@@ -149,9 +149,9 @@ class CliTest(unittest.TestCase):
                 run=_music_says_nothing,
             )
         self.assertEqual(code, 2)
-        # Both halves: the message is THERE (an exit 2 with nothing said would leave
+        # Both halves: the message is there (an exit 2 with nothing said would leave
         # the operator guessing which path was wrong), and it names the folder, never
-        # the absolute path -- the rule tests/test_discovery.py pins at the source.
+        # the absolute path, the rule tests/test_discovery.py pins at the source.
         self.assertEqual(
             buffer.getvalue(), "album_scan: library root is not a directory: nope\n"
         )
@@ -247,8 +247,8 @@ class CliTest(unittest.TestCase):
         self.assertEqual(caught.exception.code, 2)
 
     def test_the_default_path_resolves_artwork_via_the_injected_fetch(self) -> None:
-        """Drives the artwork-resolving arm of `main()` -- the one every DEFAULT
-        invocation takes, with no `--no-artwork` flag and the default webp format --
+        """Drives the artwork-resolving arm of `main()`, the one every default
+        invocation takes, with no `--no-artwork` flag and the default webp format,
         through the injected `fetch` seam, so it runs under test without reaching the
         network.
         """
@@ -270,20 +270,20 @@ class CliTest(unittest.TestCase):
 
     @needs_toolbox
     def test_musics_facts_are_handed_to_the_artwork_matcher(self) -> None:
-        """The arm where BOTH seams answer: Music.app reports a year and a track
+        """The arm where both seams answer: Music.app reports a year and a track
         count, and they are unpacked and passed to the artwork lookup as the
         tiebreakers that decide which search result really is this album.
 
-        Every other test drives at most one of the two seams -- the other artwork
+        Every other test drives at most one of the two seams (the other artwork
         tests here let the Music query fail, and the counts tests in
-        test_favorites_in_record.py pass --no-artwork -- so this is the only test that
+        test_favorites_in_record.py pass --no-artwork), so this is the only test that
         executes `artwork_for`'s `facts.year`/`facts.tracks` unpacking, the line that
         makes the verification possible.
         """
         out = self.root / "album.json"
         asked: list[str] = []
         # 1969 here against the store fixture's 1994, so the record's year names its
-        # source; a matching pair would show only that SOME year arrived.
+        # source; a matching pair would show only that some year arrived.
         fake_run = music_answering(
             "2026-08-20T10:00:00\tAn Artist\tA Record\n", "10\t2\t1969"
         )
@@ -321,7 +321,7 @@ class CliTest(unittest.TestCase):
         self.assertEqual(record["year"], "1969")
 
     def test_no_artwork_never_calls_the_injected_fetch(self) -> None:
-        """`--no-artwork` must record null WITHOUT ever invoking `fetch` -- a fetch
+        """`--no-artwork` must record null without ever invoking `fetch`: a fetch
         that raises if called proves the CLI never reaches the network-resolving
         arm, rather than merely proving the two arms produce the same field.
         """
@@ -426,8 +426,8 @@ class CliTest(unittest.TestCase):
     ) -> None:
         # The folder scan is known to mis-rank a real library, so its fallback notice
         # is the loudest guard here. On stdout with --output -, this warning would be
-        # swallowed INTO the record on any redirect: corrupting the JSON and hiding the
-        # warning in one stroke, at exactly the moment it most needs to be seen.
+        # swallowed into the record on any redirect: corrupting the JSON and hiding the
+        # warning in one stroke, at the moment it most needs to be seen.
         (self.root / "An Artist" / "A Record").mkdir(parents=True)
 
         def silent_music(
@@ -457,13 +457,13 @@ class CliTest(unittest.TestCase):
         self.assertIn("falling back to the folder scan", stderr.getvalue())
 
     def test_stdout_newline_translation_is_pinned_for_a_real_text_stream(self) -> None:
-        # io.StringIO -- what every other stdout test in this file substitutes -- has
+        # io.StringIO, what every other stdout test in this file substitutes, has
         # no `.reconfigure`, so it can never exercise the branch inside
-        # `pin_stdout_newlines` that actually calls it. This test substitutes a REAL
+        # `pin_stdout_newlines` that actually calls it. This test substitutes a real
         # io.TextIOWrapper instead (the same runtime type a genuine stdout is),
         # constructed with newline="\r\n" to simulate the untouched Windows-default
         # translation `force_utf8_streams` deliberately leaves alone (see
-        # `pin_stdout_newlines`'s own docstring) -- proving the pin actually takes
+        # `pin_stdout_newlines`'s own docstring), proving the pin actually takes
         # effect, not merely that the isinstance check runs.
         (self.root / "An Artist" / "A Record").mkdir(parents=True)
         raw = io.BytesIO()

@@ -1,11 +1,11 @@
-"""Aggregator: imports every tests/ suite so python_gate measures one coverage unit.
+"""Aggregator: imports every tests/ suite so a coverage run measures one unit.
 
-The floor below is deliberately RESTATED, not derived. A floor computed from discovery
+The floor below is deliberately restated, not derived. A floor computed from discovery
 compares discovery against itself and passes for an empty suite, which is the defect
-this guard exists to catch. What IS derived is the file SET: `_tests_by_module`
+this guard exists to catch. What is derived is the file set: `_tests_by_module`
 flattens the suite `load_tests` actually folds into the real run into a per-file count,
 and `GroupedSuiteDiscoveryTest.test_grouped_suite_meets_its_own_per_file_floor` checks
-that count's key set against `_MIN_TESTS_BY_FILE`'s -- so a new tests/test_*.py arrives
+that count's key set against `_MIN_TESTS_BY_FILE`'s, so a new tests/test_*.py arrives
 unfloored loudly, not silently absorbed into a combined total.
 
 ``_SUITE_DIR`` is the discovery root for ``_grouped_suite()``, with
@@ -38,19 +38,31 @@ _MIN_TESTS_BY_FILE: dict[str, int] = {
     "test_book_scan_failures.py": 5,
     "test_book_scan_identity.py": 7,
     "test_book_scan_write.py": 4,
+    "test_book_scan_cover_lookup.py": 31,
+    "test_book_scan_csv.py": 46,
+    "test_book_scan_sources.py": 29,
+    "test_book_scan_merge.py": 17,
+    "test_book_scan_widget.py": 17,
+    "test_book_scan_book_page.py": 19,
+    "test_book_scan_widget_source.py": 15,
+    # Always 1, for the live feed suite's reason below: BOOK_SCAN_OFFLINE skips it at
+    # run time, after discovery has counted it.
+    "test_book_scan_live_cover.py": 1,
     # Always at least 1: the live-boundary class is loaded (and counted) regardless
     # of whether BOOK_SCAN_OFFLINE or a missing BOOK_SCAN_USER_ID later skips it at
-    # RUN time -- discovery/collection happens before either skip decision.
+    # run time: discovery/collection happens before either skip decision.
     "test_book_scan_live_feed.py": 1,
+    # Always 1, for the live feed suite's reason above.
+    "test_book_scan_live_widget.py": 1,
 }
-# This module's OWN tests: the guards below, which are the only reason the file exists.
+# This module's own tests: the guards below, which are the only reason the file exists.
 # Kept apart from the grouped floors rather than summed into one total. A combined number
 # carries the grouped suites' growth as slack, and these guards are small enough to vanish
-# inside it -- two added grouped tests would buy the silent deletion of both. Counted
+# inside it: two added grouped tests would buy the silent deletion of both. Counted
 # apart, no amount of grouped growth pays for a deleted guard.
 #
 # Restated, not counted off the class below: a count taken from that class falls by one
-# when a guard is deleted, so it would pass for exactly the deletion it exists to catch.
+# when a guard is deleted, so it would pass for the very deletion it exists to catch.
 # Exact rather than a floor: under ``>=`` an added guard becomes room a later deletion
 # can hide in.
 _OWN_GUARD_TESTS = 2
@@ -69,7 +81,7 @@ def _tests_by_module(suite: unittest.TestSuite) -> dict[str, int]:
 
     ``unittest.TestLoader.discover`` returns a suite of suites (one layer per
     directory/module it walked), so this recurses through the nesting rather than
-    assuming a fixed depth -- it keeps working if discovery's internal structure ever
+    assuming a fixed depth; it keeps working if discovery's internal structure ever
     changes. Each leaf test case's ``__module__`` (e.g. ``"test_book_scan_parse"``)
     becomes a ``"test_book_scan_parse.py"`` key, matching ``_MIN_TESTS_BY_FILE``'s
     keys.
@@ -86,7 +98,7 @@ def _tests_by_module(suite: unittest.TestSuite) -> dict[str, int]:
 
 
 class GroupedSuiteDiscoveryTest(unittest.TestCase):
-    """Fail loudly when THIS MODULE's real test load is missing a grouped suite --
+    """Fail loudly when this module's real test load is missing a grouped suite,
     not merely when `tests/`, read directly off disk, is missing one.
 
     A test that instead called `_grouped_suite()` directly shares its subject's own
@@ -94,10 +106,10 @@ class GroupedSuiteDiscoveryTest(unittest.TestCase):
     deleting or renaming `load_tests` (which silently stops every suite under `tests/`
     from running as part of the real invocation) would leave the guard re-deriving the
     same count fresh off disk and staying green regardless. `unittest.TestLoader().
-    loadTestsFromModule` is exactly what `python test_book_scan.py` and python_gate's
-    coverage run use to build the real suite, and it honors the `load_tests` protocol --
-    calling the function below IF PRESENT, and returning only this module's own tests
-    otherwise -- so this is what actually depends on that wiring (measured: deleting
+    loadTestsFromModule` is what `python test_book_scan.py` and a coverage run
+    use to build the real suite, and it honors the `load_tests` protocol (calling the
+    function below if present, and returning only this module's own tests
+    otherwise), so this is what actually depends on that wiring (measured: deleting
     `load_tests` from an aggregator of this shape dropped a large suite to 1 while a
     discovery-based guard stayed green).
     """
@@ -111,7 +123,7 @@ class GroupedSuiteDiscoveryTest(unittest.TestCase):
             own_found,
             _OWN_GUARD_TESTS,
             f"this module contributed {own_found} of its own tests, expected exactly "
-            f"{_OWN_GUARD_TESTS} -- a guard above may have been deleted, or a new one "
+            f"{_OWN_GUARD_TESTS}: a guard above may have been deleted, or a new one "
             f"added without raising _OWN_GUARD_TESTS",
         )
         # Derived from the per-file floors rather than restated as a second total: that
@@ -123,19 +135,19 @@ class GroupedSuiteDiscoveryTest(unittest.TestCase):
             grouped_found,
             grouped_floor,
             f"loading this module yielded {grouped_found} grouped tests, expected at "
-            f"least {grouped_floor} -- load_tests may have been removed or renamed, "
+            f"least {grouped_floor}: load_tests may have been removed or renamed, "
             f"silently dropping a tests/ suite from the real run",
         )
 
     def test_grouped_suite_meets_its_own_per_file_floor(self) -> None:
-        """Fail loudly when ONE grouped file has lost tests, and when a new
+        """Fail loudly when one grouped file has lost tests, and when a new
         tests/test_*.py arrives with no floor entry in `_MIN_TESTS_BY_FILE` at all.
         """
         found_by_file = _tests_by_module(_grouped_suite())
-        # The comparison below checks the FULL key set both ways, so a new
+        # The comparison below checks the full key set both ways, so a new
         # tests/test_*.py added without a matching entry here would be silently
-        # unfloored -- its whole-file loss would then only be caught by
-        # the grouped SUM in the guard above, which a compensating gain elsewhere can mask.
+        # unfloored: its whole-file loss would then only be caught by
+        # the grouped sum in the guard above, which a compensating gain elsewhere can mask.
         # Comparing key sets closes that hole: an unmapped new file (or a mapped file
         # that no longer exists) fails loudly, here, before any test count is compared.
         self.assertEqual(
@@ -150,7 +162,7 @@ class GroupedSuiteDiscoveryTest(unittest.TestCase):
                 found,
                 floor,
                 f"tests/{filename} yielded {found} tests, expected at least "
-                f"{floor} -- a test may have been removed from it",
+                f"{floor}: a test may have been removed from it",
             )
 
 

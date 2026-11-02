@@ -1,4 +1,4 @@
-"""Parsing the Letterboxd diary feed -- every case measured on 2026-08-31."""
+"""Parsing the Letterboxd diary feed, every case measured on 2026-08-31."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import film_scan  # noqa: E402 - import follows the sys.path bootstrap above
 _FIXTURE = (_TOOL_ROOT / "fixtures" / "diary.xml").read_bytes()
 
 # A single-entry diary feed for the "short diary" cost case: it must carry a
-# tmdb:movieId (otherwise _director short-circuits before ever calling `lookup`,
+# tmdb:movieId (otherwise _by_tmdb_id short-circuits before ever calling `lookup`,
 # and the test would pass without exercising the cost it claims to guard).
 _ONE_FILM_FEED = (
     b'<rss version="2.0" xmlns:letterboxd="https://letterboxd.com" '
@@ -31,10 +31,10 @@ _ONE_FILM_FEED = (
 
 
 class TestDiaryEntries(unittest.TestCase):
-    """HALF a real Letterboxd feed is not films (measured: 50 of 100 items)."""
+    """Half a real Letterboxd feed is not films (measured: 50 of 100 items)."""
 
     def test_list_items_are_excluded(self) -> None:
-        # THE trap. A list item carries NO film elements, so a "first N items"
+        # The trap. A list item carries no film elements, so a "first N items"
         # adapter would render "A Made-Up List of Films" as a film. A feed with no
         # public lists is 100% diary entries, so this filter would look like dead
         # code if it were only tested against such a feed.
@@ -45,65 +45,6 @@ class TestDiaryEntries(unittest.TestCase):
         titles = [e.findtext(film_scan.LETTERBOXD_NS + "filmTitle") for e in entries]
         self.assertNotIn(None, titles)
         self.assertNotIn("A Made-Up List of Films", titles)
-
-
-class TestPosterExtraction(unittest.TestCase):
-    """The poster lives in the description HTML, not in an element of its own."""
-
-    def test_the_first_img_src_is_returned(self) -> None:
-        html = '<p><img src="https://example.invalid/a.jpg"/></p> <p>Watched.</p>'
-        self.assertEqual(
-            film_scan.poster_from_description(html), "https://example.invalid/a.jpg"
-        )
-
-    def test_review_paragraphs_after_the_poster_do_not_confuse_it(self) -> None:
-        # Measured: 19 of 150 diary items carry extra <p>/<i> review paragraphs.
-        html = (
-            '<p><img src="https://example.invalid/a.jpg"/></p> <p>Watched.</p>'
-            "<p>A review with <i>emphasis</i>.</p>"
-        )
-        self.assertEqual(
-            film_scan.poster_from_description(html), "https://example.invalid/a.jpg"
-        )
-
-    def test_a_later_img_does_not_replace_the_poster(self) -> None:
-        # The poster is the FIRST <img>. Nothing measured rules out a second one
-        # further down the description, and a last-wins parser would record that
-        # image as the film's poster instead.
-        html = (
-            '<p><img src="https://example.invalid/poster.jpg"/></p>'
-            '<p>A review with <img src="https://example.invalid/still.jpg"/>.</p>'
-        )
-        self.assertEqual(
-            film_scan.poster_from_description(html),
-            "https://example.invalid/poster.jpg",
-        )
-
-    def test_a_description_with_no_img_is_none(self) -> None:
-        # Measured: 1 item in 150 had no poster at all, so a missing poster degrading
-        # to a text-only card is a REAL case, not a hypothetical.
-        self.assertIsNone(film_scan.poster_from_description("<p>Watched.</p>"))
-
-    def test_an_empty_description_is_none(self) -> None:
-        self.assertIsNone(film_scan.poster_from_description(""))
-
-    def test_a_first_img_that_is_not_https_is_no_poster(self) -> None:
-        # The src is a third party's string, and the probe fetches what is
-        # recorded: urlopen speaks file:, ftp: and data: as readily as https, so
-        # each of these was fetched, and whatever it said was written into the
-        # record. Only https with a host is a poster; the rest is the no-poster
-        # case the card already degrades to text for.
-        for src in (
-            "http://example.invalid/a.jpg",
-            "file:///srv/private-0-600-0-900-crop.jpg",
-            "ftp://198.51.100.7/a.jpg",
-            "data:image/png;base64,AAAA",
-            "javascript:alert(1)",
-        ):
-            with self.subTest(src=src):
-                self.assertIsNone(
-                    film_scan.poster_from_description(f'<p><img src="{src}"/></p>')
-                )
 
 
 class TestNewestFilms(unittest.TestCase):
@@ -123,10 +64,8 @@ class TestNewestFilms(unittest.TestCase):
         self.assertEqual(record["rating"], 4.0)
         self.assertEqual(record["watched"], "2026-08-30")
         self.assertFalse(record["rewatch"])
-        self.assertEqual(
-            record["poster"],
-            "https://example.invalid/poster/voyage-0-600-0-900-crop.jpg",
-        )
+        # No poster lookup was injected, so none: see TestPoster.
+        self.assertIsNone(record["poster"])
 
     def test_an_unrated_entry_records_a_none_rating(self) -> None:
         # Measured: 14 of 50 diary items were logged without a rating.
@@ -141,7 +80,7 @@ class TestNewestFilms(unittest.TestCase):
     def test_a_zero_rating_records_a_none_rating(self) -> None:
         # Nothing about the Letterboxd feed rules out a literal 0.0 memberRating the
         # way Goodreads writes a literal "0" user_rating for an unrated book, and a
-        # 0.0 must not render as five empty stars -- it must omit the rating segment
+        # 0.0 must not render as five empty stars; it must omit the rating segment
         # like every other unrated record. Vendor-drift insurance, not a case in the
         # fixture (every rated entry there is > 0), which is why this constructs the
         # element directly rather than reading it out of diary.xml.
@@ -165,13 +104,6 @@ class TestNewestFilms(unittest.TestCase):
                     "</item>"
                 )
                 self.assertIsNone(film_scan._rating(item))
-
-    def test_an_entry_with_no_poster_records_none(self) -> None:
-        entries = film_scan.diary_entries(feed_read.feed_items(_FIXTURE))
-        record = film_scan._record(entries[2])
-        assert record is not None
-        self.assertEqual(record["title"], "Posterless")
-        self.assertIsNone(record["poster"])
 
     def test_a_feed_with_no_diary_entries_is_an_empty_list(self) -> None:
         empty = b'<rss version="2.0"><channel><title>x</title></channel></rss>'
@@ -222,7 +154,7 @@ class TestNewestFilms(unittest.TestCase):
 
 class TestTmdbId(unittest.TestCase):
     """The TMDB id is what the director lookup is keyed on, so its absence is a
-    real state the record must survive -- not an error.
+    real state the record must survive, not an error.
     """
 
     def test_the_id_is_read_from_the_tmdb_namespace(self) -> None:
@@ -250,10 +182,10 @@ class TestTmdbId(unittest.TestCase):
 
 
 class _RecordingLookup:
-    """A director lookup that answers a fixed name and remembers what it was asked.
+    """A director or poster lookup that answers a fixed name and remembers what it was asked.
 
-    The calls list is the point: the lookup crosses the network, so WHICH ids it is
-    asked for -- and how many times -- is part of the contract, not an incidental.
+    The calls list is the point: the lookup crosses the network, so which ids it is
+    asked for, and how many times, is part of the contract, not an incidental.
     """
 
     def __init__(self, answer: str | None = "Ada Director") -> None:
@@ -284,11 +216,11 @@ class TestDirector(unittest.TestCase):
         each lookup is about three Wikidata calls.
 
         `lookup` is called with the film's TMDB id (a plain string), not the diary
-        item itself -- see `DirectorLookup`/`_director`. So the spy below maps each
+        item itself; see `DirectorLookup`/`_by_tmdb_id`. So the spy below maps each
         id back to its film's title via the same fixture, rather than calling
         `.findtext` on its argument (which would raise: a string has no such
-        method) -- that mapping is what lets the assertion below prove the lookups
-        line up with the RETURNED records, not merely that there were two of them.
+        method). That mapping is what lets the assertion below prove the lookups
+        line up with the returned records, not merely that there were two of them.
         """
         entries = film_scan.diary_entries(self.items)
         title_by_tmdb_id = {
@@ -323,7 +255,7 @@ class TestDirector(unittest.TestCase):
 
     def test_no_lookup_happens_by_default(self) -> None:
         # The default must make no network call at all: tests/test_live_feed.py calls
-        # newest_films() bare and is written to make exactly ONE live call, to
+        # newest_films() bare and is written to make exactly one live call, to
         # Letterboxd. A network-resolving default would silently add Wikidata to it.
         records = film_scan.newest_films(self.items, 1)
         self.assertIsNone(records[0]["director"])
@@ -335,7 +267,7 @@ class TestDirector(unittest.TestCase):
         self.assertEqual(lookup.calls, ["1"])
 
     def test_a_film_with_no_tmdb_id_is_never_looked_up(self) -> None:
-        # No id means nothing to ask WITH, so the seam must not be called at all --
+        # No id means nothing to ask with, so the seam must not be called at all:
         # a lookup on an empty string would be a wasted round trip whose answer
         # could only ever be None.
         feed = (
@@ -350,83 +282,64 @@ class TestDirector(unittest.TestCase):
         self.assertEqual(lookup.calls, [])
 
 
-class TestPosterAtWidth(unittest.TestCase):
-    """Re-requesting a poster at a smaller pre-generated size.
+class TestPoster(unittest.TestCase):
+    """The poster rides on the record, resolved from TMDB through an injected seam.
 
-    MEASURED 2026-09-01 by fetching every candidate: Letterboxd serves a fixed set
-    of PRE-GENERATED sizes and answers 403 Forbidden -- not 404, and never a live
-    resize -- for anything else. An unlisted width would therefore fail at
-    PAGE-VIEW time, which is why it has to be refused here instead.
+    The description's own <img> is never read: its host refuses scripted requests, so
+    a record carrying it would fail the deploy that fetches covers.
     """
 
-    def test_rewrites_the_dimension_suffix(self) -> None:
-        self.assertEqual(
-            film_scan.poster_at_width(
-                "https://example.invalid/poster/voyage-0-600-0-900-crop.jpg", 400
-            ),
-            "https://example.invalid/poster/voyage-0-400-0-600-crop.jpg",
+    def setUp(self) -> None:
+        self.items = feed_read.feed_items(_FIXTURE)
+
+    def test_the_newest_film_carries_the_looked_up_poster(self) -> None:
+        lookup = _RecordingLookup(answer="https://image.tmdb.org/t/p/w500/a.jpg")
+        records = film_scan.newest_films(self.items, 1, poster_lookup=lookup)
+        self.assertEqual(records[0]["poster"], "https://image.tmdb.org/t/p/w500/a.jpg")
+        self.assertEqual(lookup.calls, ["1"])
+
+    def test_only_the_sliced_films_are_looked_up_newest_first(self) -> None:
+        lookup = _RecordingLookup(answer=None)
+        film_scan.newest_films(self.items, 2, poster_lookup=lookup)
+        self.assertEqual(lookup.calls, ["1", "3"])
+
+    def test_no_poster_lookup_happens_by_default(self) -> None:
+        # The same inert default as the director's, for tests/test_live_feed.py's
+        # one-live-call reason; the description's <img> is not a fallback.
+        records = film_scan.newest_films(self.items, 3)
+        self.assertEqual([record["poster"] for record in records], [None] * 3)
+
+    def test_a_record_never_takes_the_poster_from_the_description(self) -> None:
+        entries = film_scan.diary_entries(self.items)
+        record = film_scan._record(entries[0])
+        assert record is not None
+        self.assertEqual(record["title"], "The Invented Voyage")
+        self.assertIsNone(record["poster"])
+
+    def test_a_film_with_no_tmdb_id_is_never_looked_up(self) -> None:
+        feed = (
+            '<rss xmlns:letterboxd="https://letterboxd.com"><channel><item>'
+            "<letterboxd:filmTitle>No Id</letterboxd:filmTitle>"
+            "<letterboxd:watchedDate>2026-08-30</letterboxd:watchedDate>"
+            '<description><![CDATA[<img src="https://example.invalid/p.jpg"/>]]>'
+            "</description></item></channel></rss>"
+        ).encode("utf-8")
+        lookup = _RecordingLookup()
+        records = film_scan.newest_films(
+            feed_read.feed_items(feed), 1, poster_lookup=lookup
         )
+        self.assertIsNone(records[0]["poster"])
+        self.assertEqual(lookup.calls, [])
 
-    def test_the_other_path_shape_resizes_the_same_way(self) -> None:
-        # Both /poster/ and /upload/ shapes occur in a real feed, so the rewrite
-        # matches the DIMENSION suffix and never the path (poster_from_description's
-        # own docstring forbids pattern-matching the path).
-        self.assertEqual(
-            film_scan.poster_at_width(
-                "https://example.invalid/upload/unrated-0-600-0-900-crop.jpg", 300
-            ),
-            "https://example.invalid/upload/unrated-0-300-0-450-crop.jpg",
+    def test_the_two_lookups_are_independent(self) -> None:
+        director = _RecordingLookup(answer="Ada Director")
+        poster = _RecordingLookup(answer=None)
+        records = film_scan.newest_films(
+            self.items, 1, lookup=director, poster_lookup=poster
         )
-
-    def test_the_height_comes_from_the_measured_table_not_a_ratio(self) -> None:
-        # 125x187 is NOT 2:3 (that would be 187.5). Computing the height would emit
-        # a URL that 403s, so the pairing has to be a measured table.
-        self.assertEqual(
-            film_scan.poster_at_width(
-                "https://example.invalid/poster/a-0-600-0-900-crop.jpg", 125
-            ),
-            "https://example.invalid/poster/a-0-125-0-187-crop.jpg",
-        )
-
-    def test_the_table_is_the_measured_set(self) -> None:
-        # Restated on purpose: the heights cannot be computed (the 125x187 test
-        # above), so the 2026-09-01 measurement is the only oracle. A wrong entry
-        # fails no refresh -- the poster probe falls back to the feed's own URL --
-        # so it would surface only as a lost saving, or as a 403 at page-view time
-        # on a --feed-file run. A change to Letterboxd's set means re-measuring and
-        # editing both copies.
-        self.assertEqual(
-            film_scan.POSTER_SIZES,
-            {
-                70: 105,
-                125: 187,
-                150: 225,
-                200: 300,
-                230: 345,
-                250: 375,
-                300: 450,
-                400: 600,
-                460: 690,
-                500: 750,
-                600: 900,
-                1000: 1500,
-            },
-        )
-
-    def test_a_width_letterboxd_does_not_pre_generate_is_refused(self) -> None:
-        # MEASURED: 345 and 568 both return 403 Forbidden from the real CDN.
-        for width in (345, 568):
-            with self.subTest(width=width):
-                with self.assertRaises(ValueError):
-                    film_scan.poster_at_width(
-                        "https://example.invalid/poster/a-0-600-0-900-crop.jpg", width
-                    )
-
-    def test_a_url_carrying_no_dimension_suffix_is_returned_verbatim(self) -> None:
-        # Nothing to rewrite is not an error: the ORIGINAL URL is still honest about
-        # its own size, it simply misses the saving.
-        url = "https://example.invalid/poster/no-dimensions-here.jpg"
-        self.assertEqual(film_scan.poster_at_width(url, 400), url)
+        self.assertEqual(records[0]["director"], "Ada Director")
+        self.assertIsNone(records[0]["poster"])
+        self.assertEqual((director.calls, poster.calls), (["1"], ["1"]))
 
 
 if __name__ == "__main__":

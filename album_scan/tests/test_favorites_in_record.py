@@ -1,6 +1,6 @@
 """The favorited-track counts, from the toolbox's `album_stats` into the emitted record.
 
-Drives a FAKE `run` throughout -- nothing here spawns a real `osascript` process or
+Drives a fake `run` throughout: nothing here spawns a real `osascript` process or
 touches Music.app. Every CLI test below uses `--source music`, the source whose counts
 come from `album_stats`, so the fake answers two scripts off one seam: the date-added
 lookup naming one album, and that album's counts query (`_seams.music_answering`, which
@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # for _seams beside th
 
 from _seams import music_answering, needs_toolbox, no_store  # noqa: E402 - import follows the sys.path bootstrap above
 
-# Both come from album_scan, which re-exports them, NOT from their own modules: this
+# Both come from album_scan, which re-exports them, not from their own modules: this
 # tool's bootstrap is what puts those folders on sys.path, and ruff's isort would sort a
 # bare import above the line that makes it importable. Same reason
 # test_record_contract.py gives.
@@ -61,8 +61,8 @@ class RecordCarriesCountsTest(unittest.TestCase):
 
     def test_absent_counts_serialize_as_null_not_zero(self) -> None:
         # `None` means "could not tell"; 0 means "told, and none are favorited". A
-        # consumer renders those differently -- "no signal" versus "nothing favorited
-        # yet" -- so collapsing them here would destroy a distinction downstream.
+        # consumer renders those differently ("no signal" versus "nothing favorited
+        # yet"), so collapsing them here would destroy a distinction downstream.
         record = album_record(REF, None)
         self.assertIsNone(record["tracks"])
         self.assertIsNone(record["favorited"])
@@ -83,7 +83,7 @@ class RecordCarriesCountsTest(unittest.TestCase):
 class RecordCarriesYearTest(unittest.TestCase):
     """The album year, and which source wins when both have one.
 
-    Both sources report an INTEGER and the record publishes TEXT -- so these
+    Both sources report an integer and the record publishes text, so these
     assertions are quoted. The conversion happens once, at the record boundary,
     because `facts.year` is still compared numerically by the artwork matcher.
     """
@@ -99,7 +99,7 @@ class RecordCarriesYearTest(unittest.TestCase):
         self.assertEqual(record["year"], "1994")
 
     def test_the_music_year_wins_over_the_store_fallback(self) -> None:
-        # The fallback fills an ABSENCE; it never corrects a tag. Music's own year is
+        # The fallback fills an absence; it never corrects a tag. Music's own year is
         # the album as this library holds it, and the store's is a different edition's.
         record = album_record(
             REF,
@@ -177,7 +177,7 @@ class CommandLineCountsTest(unittest.TestCase):
         record = self._run_main(["--no-favorites"], run)
         self.assertIsNone(record["tracks"])
         self.assertIsNone(record["favorited"])
-        # The flag must SKIP the query, not run it and discard the answer: its whole
+        # The flag must skip the query, not run it and discard the answer: its whole
         # point is staying off Music.app, mirroring --no-artwork staying off the
         # network. The date-added query is the only one asked.
         self.assertEqual(len(asked), 1)
@@ -185,7 +185,7 @@ class CommandLineCountsTest(unittest.TestCase):
 
     def test_an_unreachable_music_still_writes_a_valid_record(self) -> None:
         # A denied automation permission, or Music.app going away between the two
-        # queries, must degrade to a record with null counts -- never to a failed
+        # queries, must degrade to a record with null counts, never to a failed
         # refresh, and never to a card that cannot be built.
         answering = music_answering(_NEWEST, "")
 
@@ -203,12 +203,12 @@ class CommandLineCountsTest(unittest.TestCase):
         """A NUL in an album name, end to end through `main`.
 
         `subprocess.Popen` refuses an argv element holding a NUL with ValueError, not
-        OSError, and the fake below does exactly that and nothing else. The name
+        OSError, and the fake below does that and nothing else. The name
         reaches the counts query by patching the Music.app lookup to return it:
         Music.app's rows are filtered before they get this far, so the patch stands
-        in for ANY caller that hands `album_facts` such a name. Before the seam's
+        in for any caller that hands `album_facts` such a name. Before the seam's
         contract covered ValueError, this killed the whole refresh with a traceback;
-        it must degrade to null counts, exactly as an unreachable Music.app does.
+        it must degrade to null counts, just as an unreachable Music.app does.
         """
 
         def popen_like(
@@ -223,7 +223,7 @@ class CommandLineCountsTest(unittest.TestCase):
         nul_ref = AlbumRef(
             artist="An Artist", album="A\x00Record", added=dt.date(2026, 8, 30)
         )
-        # `album_lookups`, not `album_scan`: the lookup is CALLED from there, and a
+        # `album_lookups`, not `album_scan`: the lookup is called from there, and a
         # `from apple_source import music_refs` binds the name in the calling module.
         # Patching it anywhere else leaves this call reaching the real toolbox query,
         # with the test still green on every other assertion.
