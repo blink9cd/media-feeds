@@ -56,6 +56,7 @@ sys.path += [
     for name in ("stdio_utf8", "help_formatter", "bounded_fetch", "feed_read")
 ]
 
+import bounded_fetch
 import feed_read
 import help_formatter
 import stdio_utf8
@@ -187,20 +188,19 @@ def _build_request(url: str) -> urllib.request.Request:
 def _real_fetch(url: str, timeout: float) -> bytes:
     """Fetch a URL: `timeout` bounds each socket operation, `read_body` the body.
 
-    The one real-network seam. Every unit test injects a fake `fetch` instead, so this
-    is reachable only from a real run or from the live-boundary suite, which is why
-    the body below is excluded from coverage, and why `tests/test_live_wikidata.py`
-    exercises it end to end rather than leaving it unproven. The body is read
-    through `feed_read.read_body`, which caps its size and ends a read still
-    arriving past its deadline; both refusals are exceptions `_api_object` already
-    turns into `{}`, so the never-raises contract holds through them.
+    The one real-network seam. Every unit test of the lookup injects a fake `fetch`
+    instead; `tests/test_wikidata_redirects.py` runs this one with urllib's protocol
+    handlers scripted, and `tests/test_live_wikidata.py` exercises it end to end. The
+    opener is `bounded_fetch`'s, which follows a redirect only to https: a hop onto
+    plain http raises `ValueError` before it is followed, so a downgraded reply is
+    never parsed as Wikidata's. The body is read through `feed_read.read_body`, which
+    caps its size and ends a read still arriving past its deadline. Every one of those
+    refusals is an exception `_api_object` already turns into `{}`, so the
+    never-raises contract holds through them.
     """
-    # A pragma on each line, since none runs under a unit test. `_build_request` is
-    # covered by RequestBuildingTest and `read_body` by feed_read's own suite; only
-    # opening the connection is not.
-    request = _build_request(url)  # pragma: no cover
-    with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - fixed https endpoint  # pragma: no cover
-        return feed_read.read_body(response)  # pragma: no cover
+    opener = bounded_fetch.build_opener({})
+    with opener.open(_build_request(url), timeout=timeout) as response:
+        return feed_read.read_body(response)
 
 
 def _api_object(

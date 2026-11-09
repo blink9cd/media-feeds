@@ -143,6 +143,11 @@ its deadline (`feed_read.md`, "The three bounds on a fetch"); both refusals reac
 `_api_object` as exceptions it already turns into `{}`, so an oversized or dripping
 response is one more `None`.
 
+A redirect is followed only to https. The request opens through `bounded_fetch`'s
+opener rather than urllib's stock one, which follows a redirect onto plain `http:` or
+`ftp:` and would hand that hop's reply to the parser as Wikidata's own. A refused hop
+raises `ValueError` before it is followed, so it, too, is one more `None`.
+
 ## Worked example
 
 `samples/README.md` holds the real captured run (the command, its stdout, and its exit
@@ -155,8 +160,7 @@ Set `WIKIDATA_DIRECTOR_OFFLINE=1` to skip the one live-boundary class in
 `tests/test_live_wikidata.py`, for a CI runner or any host with no network access, where
 a live test could never pass regardless of whether the code is correct.
 
-This is a convenience for running the rest of the suite quickly, not a way to reach full
-coverage of this folder: skipping that class also means `_real_fetch`, the module's
-only real-network seam and the only code besides the CLI entry point excluded from
-coverage, never runs at all. Full coverage is measured with the variable unset, on a
-machine with network access.
+Skipping it costs no coverage: `_real_fetch`, the module's only real-network seam, also
+runs in `tests/test_wikidata_redirects.py` with urllib's protocol handlers scripted, so
+the CLI entry point is the only code excluded from coverage. What the variable does skip
+is the one proof that the live service still answers in the shape this module parses.

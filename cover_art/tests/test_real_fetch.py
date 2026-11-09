@@ -1,4 +1,4 @@
-"""`_real_fetch`, the one real network seam, with `urlopen` faked.
+"""`_real_fetch`, the one real network seam, with its opener's `open` faked.
 
 The live suite (tests/test_live_artwork.py) proves this seam against the real endpoint
 and skips offline; what it cannot prove deterministically is what the seam does around
@@ -12,6 +12,7 @@ import io
 import sys
 import unittest
 import urllib.error
+import urllib.request
 from pathlib import Path
 from unittest import mock
 
@@ -26,10 +27,10 @@ _URL = "https://example.com/search"
 
 
 class RealFetchTest(unittest.TestCase):
-    """What `_real_fetch` does around `urlopen`, faked so no test reaches the host."""
+    """What `_real_fetch` does around `open`, faked so no test reaches the host."""
 
     def test_an_http_error_response_is_closed_before_it_is_re_raised(self) -> None:
-        # An HTTP error is still a response: `urlopen` raises it before the `with` in
+        # An HTTP error is still a response: `open` raises it before the `with` in
         # `_real_fetch` can bind it, carrying the error page's open body, and
         # `_search` then drops it as one more OSError, so nothing downstream ever
         # closed it, and every real 4xx/5xx leaked its connection as a
@@ -41,7 +42,7 @@ class RealFetchTest(unittest.TestCase):
             _URL, 404, "Not Found", email.message.Message(), body
         )
         with (
-            mock.patch("urllib.request.urlopen", side_effect=error),
+            mock.patch.object(urllib.request.OpenerDirector, "open", side_effect=error),
             self.assertRaises(urllib.error.HTTPError) as caught,
         ):
             _real_fetch(_URL, 1.0)

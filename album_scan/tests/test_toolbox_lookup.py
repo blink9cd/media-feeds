@@ -12,6 +12,7 @@ from __future__ import annotations
 import importlib
 import io
 import os
+import stat
 import sys
 import types
 import unittest
@@ -218,6 +219,64 @@ class CurrentUserTest(unittest.TestCase):
         with TemporaryDirectory() as tmp:
             kit = _make_toolbox(Path(tmp) / "kit")
             self.assertIsNone(apple_source.untrusted_reason(kit, None))
+
+    def test_off_windows_the_answer_is_the_effective_user_id(self) -> None:
+        # The portable twin of the POSIX case above: Windows has no os.geteuid, so
+        # the probe is stood in for, and the platform with it.
+        with (
+            mock.patch.object(apple_source.sys, "platform", "linux"),
+            mock.patch.object(
+                apple_source.os, "geteuid", return_value=4242, create=True
+            ),
+        ):
+            self.assertEqual(apple_source.current_uid(), 4242)
+
+
+#: The user id the stand-in stats below answer for, and a mode no other account writes.
+_OWNER = 4242
+_PRIVATE_FILE = stat.S_IFREG | 0o644
+
+
+def _stat_as(owners: dict[str, int], modes: dict[str, int]) -> object:
+    """A `Path.stat` stand-in: each path owned by `_OWNER`, mode 644, unless named.
+
+    `untrusted_reason` reads only `st_uid` and `st_mode`, which on Windows are a
+    stand-in 0 and every write bit, so the POSIX cases above skip there; this lets a
+    case on any host say which uid holds each path and what its mode is. Paths are keyed by
+    their final component.
+    """
+
+    def fake(self: Path, **_kwargs: object) -> os.stat_result:
+        uid = owners.get(self.name, _OWNER)
+        mode = modes.get(self.name, _PRIVATE_FILE)
+        return os.stat_result((mode, 0, 0, 0, uid, 0, 0, 0, 0, 0))
+
+    return fake
+
+
+class UntrustedReasonTest(unittest.TestCase):
+    """Each path's uid and mode, judged on every host through a stand-in stat."""
+
+    def setUp(self) -> None:
+        self._tmp = TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.kit = _make_toolbox(Path(self._tmp.name) / "kit")
+
+    def _reason(self, owners: dict[str, int], modes: dict[str, int]) -> str | None:
+        fake = _stat_as(owners, modes)
+        with mock.patch.object(Path, "stat", autospec=True, side_effect=fake):
+            return apple_source.untrusted_reason(self.kit, _OWNER)
+
+    def test_every_path_owned_and_private_is_trusted(self) -> None:
+        self.assertIsNone(self._reason({}, {}))
+
+    def test_a_module_others_can_write_is_refused(self) -> None:
+        modes = {"album_stats.py": stat.S_IFREG | 0o664}
+        self.assertEqual(self._reason({}, modes), "is writable by other users")
+
+    def test_a_tool_folder_another_user_owns_is_refused(self) -> None:
+        owners = {"recently_added": _OWNER + 1}
+        self.assertEqual(self._reason(owners, {}), "is not owned by the current user")
 
 
 class OpenToolboxTest(unittest.TestCase):

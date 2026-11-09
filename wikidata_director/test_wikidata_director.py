@@ -52,6 +52,7 @@ _MIN_TESTS_BY_FILE: dict[str, int] = {
     "test_label_batch_limit.py": 4,
     "test_never_raises.py": 4,
     "test_tmdb_id_guard.py": 4,
+    "test_wikidata_redirects.py": 2,
 }
 # This module's own tests, kept apart from the grouped floors rather than summed into one
 # total: a combined number carries grouped growth as slack, and a deleted test here would

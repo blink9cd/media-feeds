@@ -41,10 +41,10 @@ from collections.abc import Callable, Hashable
 from pathlib import Path
 from typing import NamedTuple, Protocol
 
-# This tool's own pure matching half (src/artwork_match.py), put on sys.path from this
-# file's own folder. Nothing else: `AlbumRef` is defined below rather than imported, so
-# this module, and album_scan, which takes the type from here, reach no other
-# project.
+# This tool's own pure matching half (src/artwork_match.py) and its redirect rule
+# (src/artwork_redirect.py), put on sys.path from this file's own folder. Nothing
+# else: `AlbumRef` is defined below rather than imported, so this module, and
+# album_scan, which takes the type from here, reach no other project.
 sys.path[:0] = [str(Path(__file__).resolve().parent / "src")]
 
 from artwork_match import (  # noqa: E402 - follows the sys.path bootstrap
@@ -52,6 +52,7 @@ from artwork_match import (  # noqa: E402 - follows the sys.path bootstrap
     release_year,
     same_artist_ids,
 )
+from artwork_redirect import HttpsOnlyRedirect  # noqa: E402 - the same bootstrap
 
 
 class AlbumRef(NamedTuple):
@@ -392,14 +393,19 @@ def _real_fetch(url: str, timeout: float) -> bytes:
     bounds are passed by name from the module constants, read at call time, so a test
     can patch them small and exercise this real path against a loopback server.
 
-    An HTTP error is still a response: `urlopen` raises it before the `with` below can
+    An HTTP error is still a response: `open` raises it before the `with` below can
     bind, carrying the error page's open body, and `_fetch_results` then drops it as one more
     `OSError`. Left open it leaks the connection and surfaces later as a
     ResourceWarning nowhere near its cause, so it is closed here (the one place that
     knows the exception owns a stream) and re-raised unchanged.
+
+    The opener follows a redirect only to https (`HttpsOnlyRedirect`), so a hop onto
+    plain http raises `ValueError` before it is followed, which the callers already
+    treat as a lookup that was not heard.
     """
+    opener = urllib.request.build_opener(HttpsOnlyRedirect())
     try:
-        with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 - fixed https endpoint
+        with opener.open(url, timeout=timeout) as response:
             return _read_body(
                 response, limit=_BODY_LIMIT_BYTES, deadline=_BODY_DEADLINE_SECONDS
             )

@@ -17,9 +17,11 @@ import os
 import subprocess
 import sys
 import unittest
+from collections.abc import Callable
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for _seams beside this file
@@ -33,6 +35,7 @@ from _seams import (  # noqa: E402 - import follows the sys.path bootstrap above
 from album_scan import main  # noqa: E402 - import follows the sys.path bootstrap above
 
 # album_scan's bootstrap above is what puts its private src/ and cover_art on sys.path.
+import folder_scan  # noqa: E402 - import follows the sys.path bootstrap above
 import notices  # noqa: E402 - import follows the sys.path bootstrap above
 from cover_art import MISS_NO_ART, AlbumRef, ArtworkMatch  # noqa: E402 - follows the bootstrap above
 
@@ -450,6 +453,26 @@ class SkippedFolderNoticeTest(unittest.TestCase):
             run=no_music,
             fetch=no_store,
         )
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(stdout)[0]["artist"], "Readable")
+        self.assertIn("album_scan: skipped unreadable folder Locked\n", stderr)
+        self.assertNotIn(str(self.root), stderr)
+
+    def test_a_folder_the_walk_passes_over_is_reported_on_every_host(self) -> None:
+        # The portable twin of the case above: Windows cannot make a folder
+        # unlistable with a mode, so the walk is stood in for, reporting the folder
+        # it passed over exactly as the real walk does, by name.
+        record = self.root / "Readable" / "Record"
+        record.mkdir(parents=True)
+
+        def walk(_root: Path, on_skip: Callable[[str], None]) -> list[Path]:
+            on_skip("Locked")
+            return [record]
+
+        args = ["--library", str(self.root), "--output", "-", "--no-artwork"]
+        args += ["--no-favorites", "--source", "folder"]
+        with mock.patch.object(folder_scan, "album_dirs", side_effect=walk):
+            code, stdout, stderr = _run(args, run=no_music, fetch=no_store)
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(stdout)[0]["artist"], "Readable")
         self.assertIn("album_scan: skipped unreadable folder Locked\n", stderr)

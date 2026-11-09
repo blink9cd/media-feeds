@@ -20,6 +20,7 @@ import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from unittest import mock
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -407,11 +408,24 @@ class ReadLibraryExportTest(unittest.TestCase):
         path.write_text(_FIXTURE, encoding="utf-8", newline="\n")
         path.chmod(0)
         self.addCleanup(path.chmod, 0o644)
-        if os.access(path, os.R_OK):  # pragma: no cover - only when run as root
-            self.skipTest("a root user reads a mode-0 file")
+        if os.access(path, os.R_OK):  # pragma: no cover - as root, or on Windows
+            self.skipTest("root, and Windows, read a mode-0 file")
         with self.assertRaises(ValueError) as caught:
             book_scan.read_library_export(self.folder, "read")
         self.assertIn("export.csv", str(caught.exception))
+        self.assertNotIn(str(self.folder), str(caught.exception))
+
+    def test_a_read_refused_on_any_host_is_refused_naming_the_file_only(self) -> None:
+        # The portable twin of the case above, which skips on Windows: a mode-0 file
+        # is only read-only there, so the read itself is made to refuse, with the
+        # whole path in its error as the real one carries.
+        path = self.folder / "export.csv"
+        path.write_text(_FIXTURE, encoding="utf-8", newline="\n")
+        refusal = PermissionError(13, "Permission denied", str(path))
+        with mock.patch.object(Path, "read_bytes", side_effect=refusal):
+            with self.assertRaises(ValueError) as caught:
+                book_scan.read_library_export(self.folder, "read")
+        self.assertEqual(str(caught.exception), "export.csv: Permission denied")
         self.assertNotIn(str(self.folder), str(caught.exception))
 
 

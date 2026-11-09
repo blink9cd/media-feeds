@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "media-feeds"
-version = "0.2.0"
+version = "0.2.1"
 description = "Feed adapters: public media RSS and a local music library in, the committed JSON records a site renders out"
 readme = "README.md"
 license = "AGPL-3.0-or-later"

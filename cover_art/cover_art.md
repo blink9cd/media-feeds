@@ -227,6 +227,18 @@ slow is refused the same way any other failed fetch is: no cover, never an excep
 server on the loopback interface: no network, no host, and the whole class runs in
 about a second.
 
+The real fetch also follows a redirect only to https. urllib's stock opener follows one
+onto plain `http:` or `ftp:`, and the reply read there would be parsed as the store's
+own, so `_real_fetch` opens through `src/artwork_redirect.py`'s handler, which refuses
+any other hop with a `ValueError`: one more failed fetch, so no cover. It copies only
+the https half of the rule the shared `bounded_fetch` library holds for the feed
+adapters (it does not refuse userinfo or an unreadable port, since this fetch sends no
+header worth guarding), kept here
+because this module depends on nothing outside its own folder (*Why this is its own
+folder*).
+`tests/test_artwork_redirect.py` proves it through the real opener, with urllib's https
+and http handlers scripted so nothing reaches a socket.
+
 `tests/test_live_artwork.py` is the one file that reaches the network. It proves the real seam: that the
 endpoint answers, that the response still parses into a URL (a renamed field would
 show up here as a loud failure rather than a silent `None`), and that the CDN returns

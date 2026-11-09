@@ -19,7 +19,7 @@ def _mode_000_locks_a_folder() -> bool:
     """True when ``chmod(0)`` stops this process listing a folder.
 
     Root can list a mode-000 folder, and on Windows ``chmod`` sets only the read-only
-    attribute, which never stops a listing (toolkit 182, round six). Probed rather than
+    attribute, which never stops a listing. Probed rather than
     inferred from the platform, so the real-permission tests run wherever they can.
     """
     with TemporaryDirectory() as tmp:

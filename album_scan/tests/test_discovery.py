@@ -83,6 +83,19 @@ class NewestAlbumTest(unittest.TestCase):
             folder_scan.newest_albums(locked, 1)
         self.assertEqual(str(caught.exception), "library root is not readable: locked")
 
+    def test_a_root_listing_refused_is_renamed_on_every_host(self) -> None:
+        # The portable twin of the case above: Windows cannot make a folder
+        # unlistable with a mode, so the walk itself refuses here, carrying the whole
+        # path in its text as the real listing's error does.
+        locked = self.root / "locked"
+        locked.mkdir()
+        refusal = PermissionError(13, "Permission denied", str(locked))
+        with mock.patch.object(folder_scan, "album_dirs", side_effect=refusal):
+            with self.assertRaises(PermissionError) as caught:
+                folder_scan.newest_albums(locked, 1)
+        self.assertEqual(str(caught.exception), "library root is not readable: locked")
+        self.assertIs(caught.exception.__cause__, refusal)
+
     def test_the_only_album_is_the_newest(self) -> None:
         make_album(self.root, "Artist One", "First Record", added=1_000_000)
         found = folder_scan.newest_albums(self.root, 1)
