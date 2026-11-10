@@ -1,8 +1,9 @@
 {
   "files": {
     ".gitignore": "sha256:b92271f93ceb7f8b7e9343924683f788c343a2d36d80ac1637d8421ab5af8b2a",
-    "CHANGELOG.md": "sha256:0d59abce62b0ebd0395775e9766ef976c815e5dd2bfa3f35f8d4a581508d2fc0",
-    "LICENSE": "sha256:480bc086cc31abd0ec8598db97abf2a5490bf30613bc209342a4e2c71a0f8b87",
+    "CHANGELOG.md": "sha256:a354fe4680bceac587e600711870ae6d3449545a4b749ec03759e1d3d81ccd21",
+    "LICENSE": "sha256:57c8ff33c9c0cfc3ef00e650a1cc910d7ee479a8bc509f6c9209a7c2a11399d6",
+    "NOTICE": "sha256:327ceae4f0e5a0b8baa3c5cef657cc5bf1ed0d00964e056974dd774243224489",
     "README.md": "sha256:cbe447a4b3d79cea16dedae1a86baa24940883105bcaef6f7acfdf0c6cd1015f",
     "album_scan/album_scan.md": "sha256:b7853f3db74d6c16d62b64f98f49dc9462fb3d9115162f35207f117aa3862741",
     "album_scan/album_scan.py": "sha256:ccf3d3b75fb3a843c27795db9766c7d403efc3649e12b1e334fb45ae9c412cb5",
@@ -160,7 +161,7 @@
     "live_pid_guard/live_pid_guard.md": "sha256:8e600e4d9ce98f87584bdd53e96eaeb2de0f78117cafeb7f8a0dd0040901b54e",
     "live_pid_guard/live_pid_guard.py": "sha256:b4da3ae67d809b265fbc9a7b1674549f775f064a68acb70ad11dfc0d513f4ad3",
     "live_pid_guard/test_live_pid_guard.py": "sha256:3edc277faba94a3dd925e88d59dadc1763663361c5a23d1bba0057feaca4b90e",
-    "pyproject.toml": "sha256:a174988bdba5cd95737e68912a3fff0acff6bb1f22f510098a309bc075114a34",
+    "pyproject.toml": "sha256:17d44a516987c86151f64ecdc9a74949db9cf7e569a248ef860f7734bce9b255",
     "stdio_utf8/stdio_utf8.md": "sha256:8521ca2a4b66c755c484fbc610db11e3f8b6203af306dee22b37a7a5bf68db0a",
     "stdio_utf8/stdio_utf8.py": "sha256:5f788ed742a0e469ebc337f693467fd32a4096a23ea52d4f798439bb77f418c7",
     "stdio_utf8/test_stdio_utf8.py": "sha256:de4f0fec1371fe588bb24bf668ee08c1613abbb867144570dd7da1475bd16e45",
@@ -181,6 +182,6 @@
   },
   "name": "media-feeds",
   "schema": 1,
-  "source_commit": "a34e3f49f660cbf6bfd6f0926cf2bfe06d9dbf06",
-  "version": "0.2.1"
+  "source_commit": "9afc032130366c58dfaa87269ce45983b633921e",
+  "version": "0.2.2"
 }
