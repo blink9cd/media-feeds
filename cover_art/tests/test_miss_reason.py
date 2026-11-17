@@ -16,7 +16,7 @@ import urllib.parse
 from pathlib import Path
 
 _TOOL_ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(_TOOL_ROOT)]
+sys.path[:0] = [str(_TOOL_ROOT), str(Path(__file__).resolve().parent)]
 
 from cover_art import (  # noqa: E402 - import follows the sys.path bootstrap above
     MISS_LOOKUP_FAILED,
@@ -26,6 +26,7 @@ from cover_art import (  # noqa: E402 - import follows the sys.path bootstrap ab
     Fetcher,
     artwork_url,
 )
+from _offline_guard import setUpModule, tearDownModule  # noqa: E402, F401 - the bootstrap above; unittest calls the hooks by name
 
 REF = AlbumRef(artist="An Artist", album="A Record", added=dt.date(2026, 8, 30))
 

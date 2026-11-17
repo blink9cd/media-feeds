@@ -90,13 +90,27 @@ below gives.
 ## Only an https URL with a host is requested
 
 `https_url_or_none(url)` returns `url` verbatim when it carries no whitespace and no Unicode
-control or format character AND `urllib.parse.urlsplit` then gives it the scheme `https`, a
-non-empty hostname and no userinfo. Everything else is `None`: `http:`, `file:`, `ftp:`,
+`C*` character (control, format, surrogate, private use, unassigned) AND
+`urllib.parse.urlsplit` then gives it the scheme `https`, a non-empty hostname, no userinfo
+and no backslash in the netloc. Everything else is `None`: `http:`, `file:`, `ftp:`,
 `data:`, `javascript:`, an `https:///x` with no host, a scheme-relative `//host/x`, an empty
-string, a `user:password@` prefix, and a string `urlsplit` itself refuses (an unclosed IPv6
-bracket). That last one answers `None` rather than letting a `ValueError` out of a parser.
+string, a `user:password@` prefix, a `\` anywhere in the netloc, and a string `urlsplit`
+itself refuses (an unclosed IPv6 bracket). That last one answers `None` rather than letting
+a `ValueError` out of a parser.
 The uppercase `HTTPS://` is accepted as it is: urllib lowercases the scheme itself when it
 picks a handler.
+
+The backslash is refused because the two readers of a URL disagree on it. `urlsplit` treats
+`\` as an ordinary host character, so `https://evil.example\.wikipedia.org/x` has a
+hostname ending in `.wikipedia.org`; a browser following the URL Standard reads `\` as `/`
+in an https URL and goes to `evil.example`. A caller that admits a URL by its host suffix
+and hands it to a page as a link would link to a host its check never saw. A backslash in
+the path moves no host and is kept. The rule refuses the one character rather than
+imposing a DNS-name pattern on the host, so other unusual host characters (`%`, `^`, `|`)
+still pass, pinned by a test. None of them can end the host early in a browser: the URL
+Standard's host parser refuses `^` and `|` in a domain, and refuses any `%` still left in
+a domain after percent-decoding, so such a link is dead rather than redirected. That is
+read from the standard, not tested in a browser.
 
 The character scan runs on the raw string, before the parse, and that order is the
 point. Parsing is not filtering: `urlsplit` silently strips tab, carriage return and line

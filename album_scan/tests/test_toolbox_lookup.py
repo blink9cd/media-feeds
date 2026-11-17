@@ -319,6 +319,27 @@ class OpenToolboxTest(unittest.TestCase):
         self.assertEqual(opened.folder, "apple_music_toolbox")
 
 
+class LookbackDaysOfTest(unittest.TestCase):
+    """The toolbox's window is read only when it is a positive, non-bool integer."""
+
+    def test_only_a_positive_integer_names_the_window(self) -> None:
+        missing = object()
+        table: list[tuple[object, int | None]] = [
+            (missing, None),
+            (True, None),
+            ("200", None),
+            (0, None),
+            (-5, None),
+            (200, 200),
+        ]
+        for value, expected in table:
+            with self.subTest(value=value):
+                module = types.ModuleType("recently_added")
+                if value is not missing:
+                    setattr(module, "_MUSIC_LOOKBACK_DAYS", value)
+                self.assertEqual(apple_source.lookback_days_of(module), expected)
+
+
 def _fake_modules(*, takes_min_stars: bool) -> dict[str, types.SimpleNamespace]:
     """The toolbox's two modules, faked: `album_facts` with or without `min_stars`.
 

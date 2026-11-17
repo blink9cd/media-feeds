@@ -78,13 +78,14 @@ call.
 ## Only an https URL with a host is fetched, or recorded
 
 `https_url_or_none(url)`, `bounded_fetch`'s and re-exported here, returns `url` verbatim
-when it is an https URL with a host and no userinfo, whitespace, or Unicode control or
-format character, and `None` for everything else. The `bounded_fetch` library's own
-doc gives the full rule and why its character scan has to run on the raw string,
-before the parse. It is `cover_art._is_recordable_url`'s rule, in this same project,
-character for character: the two were written apart, and the weaker one here let
-userinfo, a header break, a NUL, a zero-width space, a bidi override, and a plain space
-through until a security review measured the gap (2026-09-22).
+when it is an https URL with a host and no userinfo, no backslash in the netloc, and no
+whitespace or Unicode `C*` character, and `None` for everything else. The `bounded_fetch`
+library's own doc gives the full rule and why its character scan has to run on the raw
+string, before the parse. It is `cover_art._is_recordable_url`'s rule, in this same project,
+character for character, and `../cover_art/tests/test_fetch_parity.py` holds the two to it
+case by case: they were written apart, and the weaker one here let userinfo, a header
+break, a NUL, a zero-width space, a bidi override, and a plain space through until a
+security review measured the gap (2026-09-22).
 
 It is applied in two places, and both matter:
 

@@ -34,13 +34,13 @@ import folder_facts  # noqa: E402 - import follows the sys.path bootstrap above
 # derandomize=True keeps the in-suite run reproducible; deadline=None and the too_slow
 # suppression keep a loaded machine or a cold cache from reading as a flaky property.
 settings.register_profile(
-    "fuzz_gate_deterministic",
+    "deterministic",
     derandomize=True,
     max_examples=200,
     deadline=None,
     suppress_health_check=[HealthCheck.too_slow],
 )
-settings.load_profile("fuzz_gate_deterministic")
+settings.load_profile("deterministic")
 
 #: The ID3v2 major versions mutagen reads: 2.2, 2.3, and 2.4.
 _MAJOR_VERSIONS = (2, 3, 4)

@@ -32,6 +32,7 @@ _TOOL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_TOOL_ROOT))
 sys.path.insert(0, str(_TOOL_ROOT.parent / "feed_read"))
 
+import _book_scan_fuzz_profile  # noqa: E402, F401 - loads the deterministic profile before any @given
 import book_scan  # noqa: E402 - import follows the sys.path bootstrap above
 import feed_read  # noqa: E402 - import follows the sys.path bootstrap above
 

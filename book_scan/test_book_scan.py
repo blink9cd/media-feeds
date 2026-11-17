@@ -45,6 +45,7 @@ _MIN_TESTS_BY_FILE: dict[str, int] = {
     "test_book_scan_widget.py": 17,
     "test_book_scan_book_page.py": 19,
     "test_book_scan_widget_source.py": 15,
+    "test_book_scan_kept_cover.py": 12,
     # Always 1, for the live feed suite's reason below: BOOK_SCAN_OFFLINE skips it at
     # run time, after discovery has counted it.
     "test_book_scan_live_cover.py": 1,

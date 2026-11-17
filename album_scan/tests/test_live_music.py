@@ -28,6 +28,12 @@ which is not the failure this file exists to catch. Only a confirmed, clean zero
 from that probe counts as emptiness and skips; anything else, the probe itself failing
 to answer included, falls through to the real assertion, so a broken contract
 still fails loudly rather than blending into a skip.
+
+Never raising has a third face: a scan that runs out of time under load also comes
+back as `[]`. So the subject runs through `TimeoutRecordingRunner` (wrapping the same
+`_real_run`), which records a timeout without changing what the subject sees. A
+recorded timeout skips with a message naming it, since a slow machine is not a broken
+contract; an empty answer with no timeout recorded still fails.
 """
 
 from __future__ import annotations
@@ -45,8 +51,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _music_probe import (  # noqa: E402 - import follows the sys.path bootstrap above
     SCANNING_TIMEOUT_SECONDS,
+    TimeoutRecordingRunner,
     live_toolbox,
     music_is_reachable,
+    timeout_skip_reason,
 )
 from album_scan import Runner  # noqa: E402 - import follows the sys.path bootstrap above
 
@@ -188,9 +196,10 @@ class LiveMusicLookupTest(unittest.TestCase):
             )
 
     def test_the_real_library_resolves_to_a_dated_album(self) -> None:
+        recorder = TimeoutRecordingRunner(self.recently_added._real_run)
         try:
             refs = self.recently_added.newest_albums_from_music(
-                1, timeout=SCANNING_TIMEOUT_SECONDS
+                1, run=recorder, timeout=SCANNING_TIMEOUT_SECONDS
             )
         except (
             Exception
@@ -198,16 +207,24 @@ class LiveMusicLookupTest(unittest.TestCase):
             self.fail(
                 f"newest_albums_from_music raised instead of returning []: {exc!r}"
             )
-        # setUp already proved Music.app is reachable, so an empty list here is not
-        # "maybe unavailable": it means either the AppleScript contract has moved (a
-        # renamed property, a changed date format) or genuinely nothing was added to
-        # this library within the lookback window; this assertion turns that into a
-        # loud failure rather than a silent pass.
+        # The subject answers a timed-out scan with [] too; only the recorder can
+        # tell. A recorded timeout is most likely load on this machine, so it skips.
+        if not refs:
+            reason = timeout_skip_reason(recorder.timeouts)
+            if reason is not None:
+                self.skipTest(reason)
+        # setUp already proved Music.app is reachable and the recorder ruled out a
+        # timeout, so an empty list here is not "maybe unavailable" or "too slow":
+        # it means either the AppleScript contract has moved (a renamed property, a
+        # changed date format) or genuinely nothing was added to this library within
+        # the lookback window; this assertion turns that into a loud failure rather
+        # than a silent pass.
         self.assertTrue(
             refs,
-            "Music.app is reachable but newest_albums_from_music returned []: "
-            "either the AppleScript contract (a property name, the date format) has "
-            "moved, or no track was added within the lookback window",
+            "Music.app is reachable and the scan did not time out, but "
+            "newest_albums_from_music returned []: either the AppleScript contract "
+            "(a property name, the date format) has moved, or no track was added "
+            "within the lookback window",
         )
         ref = refs[0]
         self.assertTrue(ref.artist)

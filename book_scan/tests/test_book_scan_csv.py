@@ -29,6 +29,7 @@ _TOOL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_TOOL_ROOT))
 sys.path.insert(0, str(_TOOL_ROOT.parent / "feed_read"))
 
+import _book_scan_fuzz_profile  # noqa: E402, F401 - loads the deterministic profile before any @given
 import book_scan  # noqa: E402 - import follows the sys.path bootstrap above
 
 _FIXTURE_PATH = _TOOL_ROOT / "fixtures" / "library_export.csv"
@@ -214,7 +215,7 @@ class ParseShapeTest(unittest.TestCase):
         self.assertEqual([(r["title"], i) for r, i in records], [("T", "8200003")])
 
     def test_a_byte_order_mark_and_crlf_line_ends_are_tolerated(self) -> None:
-        text = "﻿" + _FIXTURE.replace("\n", "\r\n")
+        text = "\ufeff" + _FIXTURE.replace("\n", "\r\n")
         self.assertEqual(_by_id(text), _by_id(_FIXTURE))
 
     def test_a_short_row_reads_its_missing_fields_as_empty(self) -> None:
@@ -235,7 +236,7 @@ class ParseShapeTest(unittest.TestCase):
         self.assertEqual([book_id for _, book_id in records], ["8200006"])
 
     def test_an_empty_file_is_refused(self) -> None:
-        for text in ("", "﻿", "\n\n"):
+        for text in ("", "\ufeff", "\n\n"):
             with self.subTest(text=text):
                 with self.assertRaisesRegex(ValueError, "no header row"):
                     book_scan.parse_library_export(text, "read")

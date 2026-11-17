@@ -11,6 +11,16 @@ timeout, or a non-zero exit from this minimal, read-only script counts as unreac
 `live_toolbox` finds that toolbox the way `album_scan` does, so a live file skips where
 none is installed rather than failing to import.
 
+Swallowing every failure also hides a scan that simply ran out of time: on a loaded
+machine `newest_albums_from_music` answers a timed-out scan with the same `[]` as an
+empty lookback window or a moved contract. `TimeoutRecordingRunner` (album_scan's own
+recorder, read for its timeouts) wraps the run a live file hands the subject, notes
+each timeout and re-raises it, so the subject
+behaves exactly as before while the caller can still ask, afterwards, whether its
+`[]` was a timeout. `timeout_skip_reason` turns that record into the decision: a
+recorded timeout skips (load, not a broken contract), and an empty answer with none
+recorded is left to fail.
+
 Not discovered (no `test_` prefix); `tests/test_music_probe.py` proves its
 classification against a faked `run`, once, for both callers.
 """
@@ -20,6 +30,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -34,6 +45,7 @@ from apple_source import (  # noqa: E402 - import follows the sys.path bootstrap
     import_toolbox,
     locate_toolbox,
 )
+from music_causes import RecordingRunner  # noqa: E402 - follows the sys.path bootstrap above
 
 # Bounds the scanning calls the live files make (a `whose` scan visits every track
 # in the library, measured at many seconds against a large real library),
@@ -87,3 +99,42 @@ def music_is_reachable(*, run: Runner) -> bool:
     except (OSError, subprocess.TimeoutExpired):
         return False
     return result.returncode == 0
+
+
+class TimeoutRecordingRunner(RecordingRunner):
+    """`album_scan`'s own `RecordingRunner`, read here for the timeouts it recorded.
+
+    Re-raising is the point: the subject sees exactly the exception it would have
+    seen from `run` alone, so its own handling (the toolbox absorbs a timeout into
+    `[]`) is unchanged, and only the record is new. A live class wraps the toolbox's
+    own `_real_run`, as it already passes that to the probes; a test wraps a fake.
+    """
+
+    @property
+    def timeouts(self) -> list[subprocess.TimeoutExpired]:
+        """Every recorded call that ran out of time, oldest first."""
+        return [
+            record.error
+            for record in self.records
+            if isinstance(record.error, subprocess.TimeoutExpired)
+        ]
+
+
+def timeout_skip_reason(timeouts: Sequence[subprocess.TimeoutExpired]) -> str | None:
+    """The skip message for an empty answer that a recorded timeout explains, else None.
+
+    `None` means no timeout was recorded, so the empty answer is the subject's own and
+    the caller's assertion decides it. A message names the bound that ran out, so a
+    skipped run reads as most likely load on the machine rather than as a contract
+    question. A break that hangs every time (an unanswered consent prompt, a wedged
+    Music.app) also lands here, so a skip that persists on an idle machine means the
+    scan hangs, which is itself worth investigating.
+    """
+    if not timeouts:
+        return None
+    bound = timeouts[-1].timeout
+    return (
+        f"the Music.app scan timed out after {bound:g}s and the toolbox answered []: "
+        "most likely load on this machine; a skip that persists when the machine "
+        "is idle means the scan hangs, which is worth investigating"
+    )

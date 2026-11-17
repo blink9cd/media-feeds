@@ -16,13 +16,14 @@ from collections.abc import Callable
 from pathlib import Path
 
 _TOOL_ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(_TOOL_ROOT)]
+sys.path[:0] = [str(_TOOL_ROOT), str(Path(__file__).resolve().parent)]
 
 from cover_art import (  # noqa: E402 - import follows the sys.path bootstrap above
     _is_recordable_url,
     artwork_url,
 )
 from cover_art import AlbumRef  # noqa: E402 - import follows the sys.path bootstrap above
+from _offline_guard import setUpModule, tearDownModule  # noqa: E402, F401 - the bootstrap above; unittest calls the hooks by name
 
 REF = AlbumRef(artist="Artist A", album="Record A", added=dt.date(2026, 8, 30))
 
@@ -51,11 +52,14 @@ _HOSTILE_URLS = {
     "line feed": "https://example.com/a\n/100x100bb.jpg",
     "tab": "https://example.com/a\t/100x100bb.jpg",
     "space": "https://example.com/a b/100x100bb.jpg",
-    "ideographic space": "https://example.com/a　b/100x100bb.jpg",
+    "ideographic space": "https://example.com/a\u3000b/100x100bb.jpg",
     "nul": "https://example.com/a\x00/100x100bb.jpg",
     "escape": "https://example.com/a\x1b[31m/100x100bb.jpg",
-    "zero-width space": "https://example.com/a​/100x100bb.jpg",
+    "zero-width space": "https://example.com/a\u200b/100x100bb.jpg",
     "unbalanced ipv6 bracket": "https://[::1/100x100bb.jpg",
+    # urlsplit's host ends in `.wikipedia.org`; a browser reads `\` as `/` and goes
+    # to `evil.example`, a host the rule never saw.
+    "backslash in the host": "https://evil.example\\.wikipedia.org/x",
 }
 
 

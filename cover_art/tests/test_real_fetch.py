@@ -17,11 +17,12 @@ from pathlib import Path
 from unittest import mock
 
 _TOOL_ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(_TOOL_ROOT)]
+sys.path[:0] = [str(_TOOL_ROOT), str(Path(__file__).resolve().parent)]
 
 from cover_art import (  # noqa: E402 - import follows the sys.path bootstrap above
     _real_fetch,
 )
+from _offline_guard import setUpModule, tearDownModule  # noqa: E402, F401 - the bootstrap above; unittest calls the hooks by name
 
 _URL = "https://example.com/search"
 

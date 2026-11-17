@@ -17,7 +17,9 @@ tool, at refresh time, never by whatever consumes the record later.
 
 Most of the work lives in private `src/` modules. The folder scan this doc describes
 below (`newest_albums`, `_birth_time`) is `src/folder_scan.py`; the folder source's
-per-album facts (the ID3 reads) are `src/folder_facts.py`; finding, importing and
+per-album facts (the ID3 reads) are `src/folder_facts.py`, with the cap on a tag's
+read in `src/capped_read.py` and the bound on a compressed frame's inflate in
+`src/capped_zlib.py`; finding, importing and
 calling the apple-music-toolbox is `src/apple_source.py`, the one module that touches
 it; the lookups that leave the record (which albums are newest, what the source
 knows about each, and which cover art the store has) are `src/album_lookups.py`;
@@ -66,7 +68,7 @@ stderr, whatever happens and wherever the record(s) go:
 `album_scan --output - > album.json` must produce parseable JSON, not JSON with a
 status line wrapped around it, and the fallback notice (see below) would otherwise be
 swallowed into a redirected record at the moment it most needs to be seen. On
-exit `0` that confirmation names how many albums were written, the newest one, and
+exit `0` (and on an `auto` exit `3` whose fallback wrote a record) that confirmation names how many albums were written, the newest one, and
 which source actually answered (`album_scan: wrote <n> album(s), newest <artist> -
 <album> (source: music|folder)`), so a fallback under `auto` never goes unsignaled.
 Under `--source music` or `auto` it also names the toolbox folder imported, by its
@@ -81,22 +83,25 @@ Music.app instead; see "`--source`: choosing the date-added source" below.
 Every human-readable line, and only these. None of them changes the exit code or
 what reaches stdout; each is one line, prefixed `album_scan:`.
 
-- **The confirmation**, on exit `0`: `wrote <n> album(s), newest <artist> - <album>
+- **The confirmation**, whenever a record was written (exit `0`, or an `auto` exit `3`): `wrote <n> album(s), newest <artist> - <album>
   (source: music|folder)`, with `, toolbox: <folder>` inside the parentheses when a
   Music.app source opened the toolbox.
 - **The fallback notice**, under `--source auto` whenever Music.app had nothing to
   say, printed as the fallback fires and so ahead of whatever the folder scan then
-  finds (see "`--source`: choosing the date-added source" below).
+  finds (see "`--source`: choosing the date-added source" below). It reads
+  `--source auto found no album (<cause>); falling back to the folder scan, ...`,
+  naming why Music.app said nothing (see "Why Music.app answered nothing" below).
 - **A degraded record**, once per album recorded, for each fact that was asked for
   and not obtained. `counts unavailable for <artist> - <album> (<reason>)` when the
   counts came back `null`: under the folder source always, since `--no-favorites`
   still reads its tracks and year, and under Music.app only without `--no-favorites`,
   which skips its one query; the reason names the source that
-  was asked: `not in Music.app's library, or Music.app could not answer` for
-  Music.app, `no audio file in its folder, or the folder could not be read` for the
-  folder. `favorites unknown for <artist> - <album> (no track carries an ID3 POPM
-  rating)` when the folder source read the tracks and year but found no rating to
-  count. And `cover art not resolved for <artist> - <album> (<cause>)` when the cover
+  was asked: for Music.app, the cause its query recorded (see "Why Music.app
+  answered nothing" below), or `not in Music.app's library, or Music.app could not
+  answer` when none was recorded; `no audio file in its folder, or the folder could
+  not be read` for the folder. `favorites unknown for <artist> - <album> (no track
+  carries an ID3 POPM rating)` when the folder source read the tracks and year but
+  found no rating to count. And `cover art not resolved for <artist> - <album> (<cause>)` when the cover
   came back `null` without `--no-artwork`, naming which null it is: the store answered
   and has no such album, a store request failed (so it may still have it), or the
   store has the album but no usable image (`cover_art.md`, "Why a cover is null"). A
@@ -106,14 +111,19 @@ what reaches stdout; each is one line, prefixed `album_scan:`.
   less than it asked for, unless a caller asks for "The cover report" below.
 - **An unreadable tag**, `could not read the tags of <file>; counted as an unrated
   track`, once per track file under the folder source whose ID3 tag is corrupt or
-  which cannot be opened. The track still counts toward `tracks`; the name is the
-  file's own, never its path.
+  which cannot be opened. A tag refused for its size draws the same line with its
+  cause named, `could not read the tags of <file> (the tag is over the size cap);
+  counted as an unrated track`: one declaring more than the read cap, or holding
+  compressed frames that would inflate past their cap or budget (see "The folder
+  source's facts" below), so a real tag too large to read is told apart from a
+  damaged one. The track still counts toward `tracks`; the name is the file's own,
+  never its path.
 - **A skipped folder**, `skipped unreadable folder <name>`, once per artist folder
   under `--library` that the folder scan could not list (no read permission on it).
   The scan passes over that folder and goes on, so one unreadable folder costs the
   refresh one entry rather than the whole run; the name is the folder's own, never
   its path.
-- **The failure lines** behind exit `1` and `2`; see "Exit codes" below.
+- **The failure lines** behind exit `1`, `2` and `3`; see "Exit codes" below.
 
 Every name in those lines is escaped before it is printed. A track tag and a folder
 name are both arbitrary text: the AppleScript concatenates tag text unescaped, and the
@@ -127,6 +137,43 @@ dropped, so an odd name reads as odd instead of as a shorter name; ordinary text
 untouched, accents, CJK, and emoji included. The record is deliberately left alone:
 it is JSON a page reads through `textContent`, where a control character is inert, and
 escaping it there would change the data in order to protect a terminal.
+
+### Why Music.app answered nothing
+
+The apple-music-toolbox never raises: a timeout, a failed `osascript` and an empty
+lookback window all come back from it as the same empty list (and from its facts
+query as the same `None`). So album_scan names the cause on its own side of that
+contract. Every Music.app query goes through the `run` seam, and each lookup wraps
+that seam in a `RecordingRunner` (`src/music_causes.py`) that records what came back
+and hands the toolbox the very same result or exception, so the toolbox behaves
+exactly as before. The last record decides the cause, and each cause names
+Music.app or `osascript` itself, so it reads the same alone after `no album:` as
+inside the fallback notice's parentheses:
+
+| What the query did | Cause named |
+| --- | --- |
+| ran past its time bound | `Music.app timed out after <n>s` |
+| `osascript` could not be started | `osascript could not be run` |
+| exited nonzero with error `-1743` or `-1744` | `automation permission denied (osascript exit <code>: <line>)` |
+| exited nonzero otherwise | `the Music.app query failed (osascript exit <code>: <line>)` |
+| answered nothing (newest albums) | `Music.app has nothing added within the last <n> days` |
+| answered with no usable album row | `Music.app's answer held no usable album row` |
+| answered nothing (an album's facts) | `Music.app's answer was empty` |
+| answered with no usable counts | `not in Music.app's library, or its answer held no usable counts` |
+
+`<line>` is the first nonblank line `osascript` wrote to stderr, escaped like every
+name (above) and then cut at `STDERR_ECHO_LIMIT` characters of the escaped text, so a
+line of control characters cannot echo four times the limit; with no stderr,
+the parentheses hold the exit code alone. `<n>` days is the toolbox's own lookback
+window, read from it; a toolbox that does not name one gets `Music.app has nothing
+added within its lookback window`. A usable album row is one the toolbox's ranking
+keeps, and it drops a row with a date it cannot read or one dated in the future as
+well as an incomplete one (`recently_added.md`, in the apple_music_toolbox project).
+An album's facts cannot tell an album missing from the library from a reply that
+does not parse without re-reading the toolbox's reply format, so that cause names
+both. A lookup that recorded nothing (a toolbox that never calls `run`) keeps the
+generic wording: `no album: Music.app reported no recently added album`, the auto
+notice's list of every possibility, and the counts line's generic reason.
 
 ## `--count`: how many albums to record
 
@@ -172,12 +219,19 @@ year, and favorites), so `--source` picks both at once.
 - **`music`**: use Music.app only, through the apple-music-toolbox (see "Finding the
   toolbox" below). `--library` is ignored entirely, neither read nor validated, so a
   missing or invalid `--library` never causes a failure here; only Music.app having
-  nothing to report does (exit `1`, "Music.app reported no recently added album").
+  nothing to report does (exit `1`, `no album: <cause>`, see "Why Music.app
+  answered nothing" above; `no album: Music.app reported no recently added album`
+  when no cause was recorded).
 - **`auto`**: prefer Music.app's own "date added"
   (`recently_added.newest_albums_from_music`, via AppleScript); fall back to the
-  folder scan of `--library` only if Music.app reports nothing (not running, not
-  scriptable, automation permission denied, or genuinely nothing added within its
-  lookback window; see `recently_added.md`, in the apple_music_toolbox project).
+  folder scan of `--library` only if Music.app reports nothing, for any cause (not
+  running, not scriptable, timed out, automation permission denied, or genuinely
+  nothing added within its lookback window; see `recently_added.md`, in the
+  apple_music_toolbox project).
+  A fallback caused by a denied automation permission (the `automation permission
+  denied` cause) still scans the folder and, when it finds an album, writes its record,
+  but the run exits `3` whether or not the folder held an album: a lost grant is never
+  reported as a success (see "Exit codes" below).
   The fallback is short-circuited: a successful Music.app answer means `--library` is
   never even read, so an invalid or missing `--library` is harmless under `auto` as
   long as Music.app answers. A fallback that does fire prints a notice at the
@@ -185,7 +239,8 @@ year, and favorites), so `--source` picks both at once.
   before a "no album found" or a "library root is not a directory" that the fallback
   then runs into: the folder scan ranks by each folder's birth time, which is not a
   reliable "date added" (see "Why the folder scan's date is a heuristic" below), and
-  a silent substitution would hide that. When it falls back, the facts come
+  a silent substitution would hide that. The notice names the cause the query
+  recorded. When it falls back, the facts come
   from the folder too, so the record says which favorites it counted through
   `favorite_signal`.
 
@@ -300,6 +355,56 @@ opened still counts, with a stderr line naming the file; a property test feeds t
 tag reader arbitrary bytes behind a well-formed ID3 header to hold it to that. An album folder with no
 audio file at all has `null` facts, the same as a Music.app that could not answer.
 
+**Compressed frames inflate within a cap per frame and a budget per tag.** mutagen
+inflates a compressed ID3 frame (v2.3 or v2.4) whole with zlib and no output bound, so
+a tag of a few kilobytes on disk can hold a frame that inflates to any size, and one
+hostile file in the library could exhaust memory. `folder_facts` therefore puts
+`src/capped_zlib.py`'s bounded `zlib` in mutagen's ID3 frame module when it is
+imported: each frame's output is counted a chunk at a time and dropped before any of it
+is kept, and a frame past `MAX_FRAME_INFLATE_BYTES` is refused without being held. That
+cap is 1 MiB: far past the rating and year frames, the only ones read, and high enough
+that a large compressed frame this reader never keeps (lyrics, a comment) does not cost
+the track its rating.
+
+The cap alone bounds one frame, not a tag: mutagen keeps every frame whose key differs,
+and a private frame's key holds its data, so a tag of about 62 KiB holding 60 frames
+each just under the cap loaded with about 120 MiB held. Each tag read is therefore also
+charged against `MAX_TAG_INFLATE_BYTES`, 4 MiB (four frames at the cap, still far past
+any real tag's compressed frames), and a tag whose frames together pass it is refused
+the same way. Frames that fail to inflate are charged too, at what their count
+inflated: mutagen drops a failed frame as junk and reads on, so uncharged, a tag of
+them would cost a count and a whole inflate each, without end. Either refusal fails the
+whole tag rather than dropping the one frame, so the track gets the unreadable-tag line
+and counts unrated.
+
+What remains is CPU and a bounded amount of memory, not nothing: a hostile tag can
+still make one read inflate up to the budget plus a counting chunk, and count and
+discard that much before it is refused. A tag kept within the budget holds about twice
+what its frames inflate to, or more, because mutagen keeps each private frame's data
+twice, once as the frame's bytes and once in its key: four frames just under the cap
+held about 8 MiB once loaded.
+
+**The tag is read within a cap of its own.** mutagen reads a tag's body from the file
+whole, at the size its header declares, before any frame is inflated: a 28-bit
+syncsafe integer, up to 256 MiB, and a v2.3 extended header's plain 32-bit size, up to
+4 GiB. A file of a hundred bytes could make it allocate either. `folder_facts`
+therefore hands mutagen `src/capped_read.py`'s view of the file rather than its path:
+one read over `MAX_TAG_READ_BYTES`, 16 MiB, is refused before anything is read, and
+every read asks the file for no more than it holds past the current position, so a
+size the file only declares is never allocated. 16 MiB fits a real tag holding several
+large embedded covers. The cap bounds each read, not the track: a v2.3 extended header
+just under the cap and a body just under it are two reads, about 32 MiB together, and
+parsing the body costs about two to three times the body again, up to about 48 MiB, so
+one track's worst case is about 80 MiB, before the inflate budget's own share above.
+The refusal fails the whole tag, as the inflate's do, and draws the unreadable-tag line
+naming the size cap. The read cap and the inflate budget are separate: neither is
+charged to the other.
+
+An extended header claiming more than the tag it sits in is unreadable too: mutagen
+then asks for the tag's remainder at a negative size and raises a `ValueError` of its
+own, which the reader turns into an unreadable tag rather than letting it end the
+refresh.
+
 ## Why the folder scan's date is a heuristic
 
 Ranking by the library folder's filesystem birth time (macOS `st_birthtime`) can be
@@ -356,13 +461,15 @@ quoted as a request count under-reports this tool's egress by half:
   fully offline whatever the source. Listed here because an operator counting what a refresh costs needs them in
   the same place, not because they leave the machine.
 - **The cover image fetch** (not this tool, but whatever displays the record): the
-  resolved artwork URL points straight at the vendor's CDN, so a page that hot-links it
-  has every visitor's browser fetch that image, on every page view, from the
-  CDN; this tool has already exited by then. This is the one that scales with traffic
-  rather than with `--count`, and it is the reason the split above is worth keeping
-  straight. A `referrerpolicy` of `no-referrer` on that page's `<img>` stops the CDN
-  also learning which page the visitor came from; it does nothing about the searches
-  above, which never touch a visitor's browser at all.
+  resolved artwork URL points straight at the vendor's CDN, and this tool has already
+  exited by the time anything reads it. Where it is fetched from then depends on the
+  consumer. A consumer that copies each cover into its own site at deploy fetches every
+  cover once per deploy, so its visitors load the site's own copy and no visitor's browser
+  reaches the vendor's CDN. A page that hot-links the URL instead has every visitor's browser fetch that image, on every page
+  view, from the CDN, which scales with traffic rather than with `--count`; a
+  `referrerpolicy` of `no-referrer` on that page's `<img>` then stops the CDN also
+  learning which page the visitor came from. Neither shape touches the searches above,
+  which never run in a visitor's browser at all.
 
 ## Why the record carries no filesystem path
 
@@ -402,17 +509,19 @@ with one entry per album recorded, in the record's order:
 `lookup-failed`, `no-art`), `not-asked` under `--no-artwork`, or `unknown` for a null
 that names no cause (`src/cover_report.py`). Like the record, it carries names only,
 never a path, and goes through the same atomic writer. It is written only after the
-record is, so exit `1` (no album) and exit `2` write none. A report that cannot be
-written is said on stderr as `cannot write <name>`, and the exit stays `0`: the record
-it describes was written.
+record is, so exit `1` (no album) and exit `2` write none, and exit `3` writes one only
+when an `auto` fallback wrote a record. A report that cannot be written is said on
+stderr as `cannot write <name>`, and the exit stays `0` (or `3`): the record it
+describes was written.
 
 ## Exit codes
 
 - `0`: wrote the record(s). Finding fewer albums than `--count` asked for is still
   `0`; only finding none is the failure case below.
 - `1`: no album found for `--source`: under `--source music`, Music.app reported
-  nothing; under `--source folder`, or `auto` once it falls back, nothing under
-  `--library` looked like an album.
+  nothing, for any cause but the one exit `3` names, and the line names which (see
+  "Why Music.app answered nothing" above); under `--source folder`, or `auto` once it
+  falls back, nothing under `--library` looked like an album.
 - `2`: a path argument or an option cannot be used: `--library` is not a directory,
   or is one the tool has no permission to list (only when a folder scan is
   actually attempted; see "`--source`: choosing the date-added source" above);
@@ -425,6 +534,15 @@ it describes was written.
   `--source music` or `auto`, no apple-music-toolbox was found, it did not import,
   or it predates a `--favorite-min-stars` the run sets (see "Finding the toolbox"
   above).
+- `3`: Music.app refused the Automation permission (osascript error `-1743`, or
+  `-1744` for an event that would need consent an unattended run cannot ask for; the
+  `automation permission denied` cause). Under `--source music` no record is written.
+  Under `auto` the folder fallback still runs: when it finds an album its record is
+  written as on exit `0`, and the run still exits `3`; when it finds none, nothing is
+  written. It is neither `0` nor `1` because a lost grant is neither a success nor a
+  day with nothing new, and a caller must be able to tell it from both. This tool does
+  nothing more about it: it does not retry, and whether to keep a record written beside
+  exit `3`, try again or tell someone is the caller's to decide.
 
 ## Who consumes this record
 
@@ -495,7 +613,9 @@ On exit `1`, either Music.app had nothing to report (`--source music`), or nothi
 under `--library` looked like an album (`--source folder`, or `auto` once it falls
 back; fix the library path or accept that no record is written this refresh). On exit
 `2`, fix the path or option the message names and re-run; a previous `--output` record
-is still intact.
+is still intact. On exit `3`, allow the Automation permission for Music.app in System
+Settings > Privacy & Security > Automation, then re-run; under `auto` any record the
+fallback wrote is the folder scan's, and is replaced by Music.app's on that re-run.
 
 ## Usage
 

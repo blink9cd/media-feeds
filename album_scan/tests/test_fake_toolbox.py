@@ -3,8 +3,9 @@
 The suites marked `needs_toolbox` drive the real toolbox's own parsing of a faked
 `osascript` reply, so they skip wherever the toolbox is not installed, a standalone
 clone of this project among them. The arms they alone would reach still have to run
-there: Music.app reporting no album at all, and Music.app's facts reaching the artwork
-matcher as its tiebreakers. These cases write a stand-in toolbox into a temporary
+there: Music.app reporting no album at all, Music.app's facts reaching the artwork
+matcher as its tiebreakers, and a refused automation permission exiting 3 under both
+Music.app sources. These cases write a stand-in toolbox into a temporary
 folder instead, two real modules answering from constants, and point `--toolbox` at
 it, so the whole locate-import-call path runs for real with no toolbox installed.
 
@@ -18,6 +19,7 @@ from __future__ import annotations
 
 import io
 import json
+import subprocess
 import sys
 import unittest
 from collections.abc import Callable
@@ -29,7 +31,7 @@ from types import ModuleType
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # for _seams beside this file
 
-from _seams import no_music, no_store  # noqa: E402 - import follows the sys.path bootstrap above
+from _seams import DENIED_STDERR, completed, no_music, no_store  # noqa: E402 - import follows the sys.path bootstrap above
 from album_scan import main  # noqa: E402 - import follows the sys.path bootstrap above
 
 # album_scan's bootstrap above is what puts its private src/ on sys.path.
@@ -62,6 +64,18 @@ def newest_albums_from_music(count, *, run):
     ][:count]
 '''
 
+#: The stand-in `recently_added` that asks Music.app first: one `run` call with the
+#: real toolbox's argv shape (`osascript -e <script>`, the script asking about "date
+#: added"), and `[]` on a nonzero exit, as the toolbox answers every failure. It is
+#: that recorded call `newest_cause` reads, which the stand-in above never makes.
+_RECENTLY_ADDED_ASKING = _RECENTLY_ADDED.replace(
+    "def newest_albums_from_music(count, *, run):\n",
+    "def newest_albums_from_music(count, *, run):\n"
+    "    result = run(['osascript', '-e', 'get date added of every track'], 60.0)\n"
+    "    if result.returncode != 0:\n"
+    "        return []\n",
+)
+
 #: The stand-in `album_stats`: the toolbox's call shape, answering from `FACTS`.
 _ALBUM_STATS = '''"""A stand-in album_stats: answers from FACTS, never Music.app."""
 from typing import NamedTuple
@@ -80,6 +94,9 @@ def album_facts(*, artist, album, run, min_stars=None):
 #: The `fetch` seam's shape: (url, timeout_seconds) -> response body.
 Fetch = Callable[[str, float], bytes]
 
+#: The `run` seam's shape: (argv, timeout_seconds) -> the finished process.
+Run = Callable[[list[str], float], subprocess.CompletedProcess[str]]
+
 #: One album, by the names the store result below carries for its artist.
 _NEWEST = [("An Artist", "A Record", "2026-08-20")]
 
@@ -93,6 +110,14 @@ _RENAMED_RESULT = {
     "trackCount": 10,
     "artworkUrl100": "https://example.com/a/100x100bb.jpg",
 }
+
+
+def _denying_music(args: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
+    """A `run` answering the date-added query with a refused automation permission."""
+    del timeout  # unused: the refusal comes back at once
+    if "date added" not in args[-1]:
+        raise AssertionError("only the date-added query was expected")
+    return completed(1, stderr=DENIED_STDERR)
 
 
 def _holds_toolbox_module(entry: str) -> bool:
@@ -109,14 +134,23 @@ def _write_module(path: Path, source: str) -> None:
 
 
 def write_fake_toolbox(
-    folder: Path, *, newest: list[tuple[str, str, str]], facts: tuple[int, int, int]
+    folder: Path,
+    *,
+    newest: list[tuple[str, str, str]],
+    facts: tuple[int, int, int],
+    asks_music: bool = False,
 ) -> Path:
-    """A stand-in toolbox at `folder`: Music.app's newest albums and one album's facts."""
+    """A stand-in toolbox at `folder`: Music.app's newest albums and one album's facts.
+
+    With `asks_music`, its newest-albums call puts the date-added query to `run` first
+    and answers `[]` when that exits nonzero, so a case can force a recorded failure.
+    """
     folder.mkdir()
     folder.chmod(_FOLDER_MODE)
+    recently_added = _RECENTLY_ADDED_ASKING if asks_music else _RECENTLY_ADDED
     _write_module(
         folder / "recently_added" / "recently_added.py",
-        f"{_RECENTLY_ADDED}\nNEWEST = {newest!r}\n",
+        f"{recently_added}\nNEWEST = {newest!r}\n",
     )
     _write_module(
         folder / "album_stats" / "album_stats.py",
@@ -156,7 +190,12 @@ class _FakeToolboxCase(unittest.TestCase):
         sys.modules.update(saved)
 
     def _main(
-        self, kit: Path, *extra: str, fetch: Fetch = no_store
+        self,
+        kit: Path,
+        *extra: str,
+        fetch: Fetch = no_store,
+        run: Run = no_music,
+        source: str = "music",
     ) -> tuple[int, str, str]:
         stdout, stderr = io.StringIO(), io.StringIO()
         with redirect_stdout(stdout), redirect_stderr(stderr):
@@ -165,13 +204,13 @@ class _FakeToolboxCase(unittest.TestCase):
                     "--library",
                     str(self.library),
                     "--source",
-                    "music",
+                    source,
                     "--toolbox",
                     str(kit),
                     *extra,
                 ],
                 fetch=fetch,
-                run=no_music,
+                run=run,
             )
         return code, stdout.getvalue(), stderr.getvalue()
 
@@ -185,7 +224,9 @@ class NoMusicAlbumTest(_FakeToolboxCase):
         code, stdout, stderr = self._main(kit, "--output", str(out), "--no-artwork")
         self.assertEqual(code, 1)
         self.assertEqual(stdout, "")
-        self.assertIn("album_scan: Music.app reported no recently added album", stderr)
+        self.assertIn(
+            "album_scan: no album: Music.app reported no recently added album", stderr
+        )
         # --source music never consults the library, so naming it would misdiagnose.
         self.assertNotIn(self.library.name, stderr)
         self.assertFalse(out.exists())
@@ -227,6 +268,56 @@ class ImportToolboxTest(_FakeToolboxCase):
         for name in _TOOLBOX_MODULES:
             with self.subTest(folder=name):
                 self.assertEqual(sys.path.count(str(kit / name)), 1)
+
+
+class DeniedMusicTest(_FakeToolboxCase):
+    """A refused automation permission exits 3, with no toolbox but the stand-in.
+
+    The stand-in here asks `run` the date-added question as the real toolbox does, so
+    the recorded refusal is what `newest_cause` reads: the denial's exit-3 arms of
+    `main`, its no-album line and the fallback notice naming it all run without the
+    toolbox the cause suites drive.
+    """
+
+    def _denied(self, source: str, *extra: str) -> tuple[int, str, str]:
+        kit = write_fake_toolbox(
+            self.root / "kit", newest=_NEWEST, facts=(0, 0, 0), asks_music=True
+        )
+        return self._main(
+            kit, "--no-artwork", *extra, source=source, run=_denying_music
+        )
+
+    def test_music_denied_with_no_album_exits_3_naming_the_denial(self) -> None:
+        code, stdout, stderr = self._denied("music", "--output", "-")
+        self.assertEqual(code, 3)
+        self.assertEqual(stdout, "")
+        self.assertIn(
+            "album_scan: no album: automation permission denied (osascript exit 1: "
+            f"{DENIED_STDERR.strip()})",
+            stderr,
+        )
+
+    def test_auto_denied_writes_the_folder_record_and_exits_3(self) -> None:
+        (self.library / "Folder Artist" / "Folder Record").mkdir(parents=True)
+        code, stdout, stderr = self._denied("auto", "--output", "-")
+        self.assertEqual(code, 3)
+        records = json.loads(stdout)
+        self.assertEqual(
+            [(r["artist"], r["album"]) for r in records],
+            [("Folder Artist", "Folder Record")],
+        )
+        self.assertIn(
+            "album_scan: --source auto found no album (automation permission denied "
+            f"(osascript exit 1: {DENIED_STDERR.strip()})); falling back",
+            stderr,
+        )
+        self.assertIn("album_scan: wrote 1 album(s)", stderr)
+
+    def test_auto_denied_over_an_empty_library_still_exits_3(self) -> None:
+        code, stdout, stderr = self._denied("auto", "--output", "-")
+        self.assertEqual(code, 3)
+        self.assertEqual(stdout, "")
+        self.assertIn(f"album_scan: no album found under {self.library.name}", stderr)
 
 
 if __name__ == "__main__":

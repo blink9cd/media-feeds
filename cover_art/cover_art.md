@@ -42,6 +42,69 @@ the rejected alternative: it kept choosing *Fictionals (Teal Album)*, because bo
 reduce to `fictionals`, so the narrow query "succeeded" and the query holding the right answer
 never ran.
 
+That reduction is `src/artwork_match.py`'s `normalize`. It deletes variation selectors
+first, then puts the name in NFKC, so a composed and a decomposed accent are one spelling
+and a full-width bracket is an ASCII one; it drops the trailing qualifiers, folds `&`
+to `and`, casefolds and puts the result in NFKC again, deletes apostrophes, and keeps the
+letters, digits and combining marks of every script, with each run of anything else one
+space, and puts those words in NFKC once more. Casefold can split a letter into a base and
+separate marks, or an iota, that NFKC composes (*ΐ*, *ǰ*, *ᾂ* before an acute), and the
+apostrophe deletion can leave a letter beside the accent that followed it (*Writer’́s*),
+so without the two passes a name's `normalize` was not its own `normalize` again, and
+*ᾂ́* and *ἂί* were two albums. A variation selector is a combining mark too, but it
+chooses how a character is drawn rather than which name it spells, so it is deleted: *I ❤️ NY* and *I ❤ NY* are one name. It goes before the
+qualifier strip, because one after a closing bracket would otherwise hide the qualifier
+from it. A Cyrillic, CJK, Greek, Arabic, Hebrew or Devanagari title therefore matches on
+its own letters; an earlier filter kept ASCII only, so every such title reduced to
+nothing and matched every other. No accent is folded away: *Björk* is not *Bjork*.
+
+A title with no letter, digit or mark, such as *+*, *×* or *!!!*, would reduce to nothing
+the same way, and every such title by one artist would match every other, so an artist
+whose albums are each one symbol would get the wrong album's cover. Such a title is
+compared by its own text instead: NFKC, casefolded, outer whitespace stripped and each
+inner run one space, so *＋* is *+* and *★️* is *★*. It takes no second NFKC, because none
+would change it: casefold makes nothing NFKC alters out of such a character, and every
+character NFKC composes onto is a letter, digit or mark (tests check both over every code
+point). A title with none at all is compared whole, brackets included, so *(+)* is not
+*(×)*; one whose base alone has none, *+ (Live)*, compares that base as text and its
+qualifier as usual. The test runs before the `&` fold,
+so a title that is only *&* is not an album called *And*. A title that is only a
+qualifier, *(Live)*, keeps an empty base and is told apart by its qualifier. A title the
+folds reduce to nothing keeps its own text the same way: U+02BC MODIFIER LETTER
+APOSTROPHE is a letter, so it passes the test, but it is deleted as an apostrophe, so a
+title that is only *ʼ* is compared as *ʼ* rather than read as a blank name.
+
+Each trailing qualifier group takes the same rule, read by its inner text without the
+brackets: a group with no letter, digit or mark keeps its own text, so *X (+)* and
+*X (×)* are two editions rather than both reducing to a plain *X*, and *(+) (Live)* is
+not *(Live)*. The test runs before the `&` fold here too, so *X (&)* has the qualifier
+`&`, not `and`. A group the folds reduce to nothing keeps its own text too, so *X (ʼ)*
+has the qualifier `ʼ`, as *X (’)* has `’`, and no longer matches *X (Live)*; on one side
+only it still matches a plain *X*. A group blank inside, *()* or *( )*, adds nothing, so *Album ()* is still
+*Album* and still matches *Album (Deluxe)*. Blank means whitespace only: a group
+holding an invisible character, a zero-width space or a soft hyphen, keeps it as its
+text, as a symbol-only name keeps one, so *Album* with a zero-width space
+in brackets no longer matches *Album (Deluxe)*. A stray opening bracket stays in the group's text,
+so *X ((+)* has the qualifier `(+`. A symbol qualifier on one side only is
+accepted like any other one-sided qualifier: *X (+)* matches a plain *X*, because the
+store may simply not carry the qualifier.
+
+A blank name, one with no text left at all (empty, whitespace, or variation selectors
+alone), is refused on either side by `pick_album`: a blank wanted album is answered with
+no match, and a candidate with a blank name is skipped, on the year-and-track-count
+route too. Blank has nothing to compare, so it would otherwise meet a qualifier-only
+title such as *(Live)* as the same work.
+
+The qualifier strip is quadratic in length and the store chooses every candidate's name,
+so a name is bounded at `_MAX_NAME_CHARS`. `pick_album` and `same_artist_ids` measure it
+after NFKC and the `&` fold, the two steps that can lengthen it, and do not compare a name
+past that bound at all, on either side. Measuring after NFKC must not itself cost what the
+bound saves, so a name longer raw than `_MAX_RAW_NAME_CHARS` is refused on its length
+alone, before any of it is normalized; that bound is looser than the cap by the most NFKC
+and the selector deletion can shorten a real name, and the source derives it. A direct
+`normalize` or `split_name` call instead reads only its first `_MAX_NAME_CHARS` characters
+after NFKC.
+
 The request count therefore scales as two per album resolved (plus the catalog
 fallback below, only on a miss), and the caller decides
 how many albums that is. `album_scan.py` is that caller; what a whole refresh spends is
@@ -162,10 +225,12 @@ be one more thing to keep in step, for a case that contract already covers.
 The store's `artworkUrl100` is remote input, and the URL this module records ends up
 in an `<img src>` on a page. So a URL is recorded only when it is an `https` URL with
 a host and nothing else: no other scheme (`javascript:`, `data:`, `file:`, plain
-`http:`), no scheme-relative `//host`, no `user:password@` prefix, and no whitespace or
-Unicode control character anywhere in it. Anything else is treated like a
-candidate with no art at all: the album is still the right one, so its release year
-is kept and only the URL is dropped.
+`http:`), no scheme-relative `//host`, no `user:password@` prefix, no backslash in the
+netloc (`urlsplit` reads it as a host character, a browser as `/`, so the page would
+load from a host the rule never saw), and no whitespace or Unicode `C*` character
+(control, format, surrogate, private use, unassigned) anywhere in it. Anything else is
+treated like a candidate with no art at all: the album is still the right one, so its
+release year is kept and only the URL is dropped.
 
 The rule is judged on the URL after the size rewrite, because that is the string
 actually recorded. There is deliberately no allowlist of vendor hosts: the rule is about
@@ -207,9 +272,14 @@ header.
 
 ## Testing
 
-`test_cover_art.py` drives `artwork_url` against a fake fetcher (every
-not-found branch, a property test over the response body, and the surrogate-in-a-field
-cases), so no unit test reaches the network. `tests/test_artwork_match.py` pins the
+`test_cover_art.py` is the aggregator: its `load_tests` folds every `tests/test_*.py`
+into its own run, and it floors each of those files at the test count it holds, so a
+file that loses tests, or a new one with no floor, fails loudly rather than shrinking
+the run unnoticed. `tests/test_artwork_url.py` drives `artwork_url` against a fake
+fetcher (every not-found branch and the surrogate-in-a-field cases), and
+`tests/test_artwork_url_properties.py` holds its property tests over the response body
+and the album's names, so no unit test reaches the network, and a tripwire (below)
+fails any that tries. `tests/test_artwork_match.py` pins the
 pure matcher, `src/artwork_match.py`, against candidate sets modeled on the store's own
 reply for a band with several self-titled albums. `tests/test_artist_catalog.py` pins
 the catalog fallback against a fake that answers searches and lookups separately, with a
@@ -225,19 +295,37 @@ in chunks against a size cap and a deadline, and a reply that is too large or to
 slow is refused the same way any other failed fetch is: no cover, never an exception.
 `tests/test_read_body.py` proves that on the real code path, against a throwaway HTTP
 server on the loopback interface: no network, no host, and the whole class runs in
-about a second.
+a few seconds. Only the drip tests shrink the deadline below a second, and their server
+drips until the client hangs up, so neither verdict depends on how promptly a loaded
+machine schedules the client; two tests stall the client on purpose to prove it.
 
 The real fetch also follows a redirect only to https. urllib's stock opener follows one
 onto plain `http:` or `ftp:`, and the reply read there would be parsed as the store's
 own, so `_real_fetch` opens through `src/artwork_redirect.py`'s handler, which refuses
-any other hop with a `ValueError`: one more failed fetch, so no cover. It copies only
+any other hop with a `ValueError`: one more failed fetch, so no cover. It copies
 the https half of the rule the shared `bounded_fetch` library holds for the feed
-adapters (it does not refuse userinfo or an unreadable port, since this fetch sends no
-header worth guarding), kept here
-because this module depends on nothing outside its own folder (*Why this is its own
-folder*).
+adapters, kept here because this module depends on nothing outside its own folder (*Why
+this is its own folder*). It also refuses a backslash anywhere in the netloc, as that
+library does, since `urlsplit` reads one as a host character and a browser reads it as
+`/`. It leaves out three of that library's refusals. It does not refuse userinfo or an
+unreadable port, since this fetch sends no header worth guarding.
+Nor does it refuse any raw whitespace or Unicode `C*` character in the URL: that one is
+a deliberate known difference, left out on purpose and pinned case by case by
+`tests/test_fetch_parity.py`, rather than a hop this copy guards.
 `tests/test_artwork_redirect.py` proves it through the real opener, with urllib's https
 and http handlers scripted so nothing reaches a socket.
+
+Three copies, this redirect handler, `_read_body`, and `_is_recordable_url`, are held
+to the shared library by `tests/test_fetch_parity.py`, which runs each beside its
+`bounded_fetch` original on the same cases and fails when they disagree. The recording
+rule must match `https_url_or_none` on every case, the redirect cases included. The
+readers must agree on every case, a chunk landing exactly at the deadline included
+(kept, by both: only one landing after it is refused); only the deadline's value
+differs, and the test passes both the same one. The handlers must agree on every follow and refuse case the test lists. On the three known
+differences above (userinfo, an unreadable port, and any raw whitespace or Unicode `C*`
+character), the copy follows and the library refuses, and each is asserted so a change
+on either side shows up. The test puts `bounded_fetch` on its path from the one place
+this repository vendors it, directly under the root.
 
 `tests/test_live_artwork.py` is the one file that reaches the network. It proves the real seam: that the
 endpoint answers, that the response still parses into a URL (a renamed field would
@@ -255,3 +343,17 @@ skips on its own when the search endpoint is unreachable at the network layer, b
 HTTP error counts as reachable and fails. `COVER_ART_OFFLINE` is this folder's own
 switch, like each other live tool's in this project (`album_scan`'s is
 `ALBUM_SCAN_OFFLINE`), so a fully offline run sets each of them.
+
+Every other test module, `test_cover_art.py` included, is held offline by a tripwire
+rather than by care: each binds unittest's `setUpModule` and `tearDownModule` from
+`tests/_offline_guard.py`. While that module's tests run, a connection to any host but
+loopback is refused and every proxy is removed (a loopback proxy would tunnel past the
+refusal). The refusal alone would not be loud, since the fetch turns any `OSError` into
+a quiet miss, so each one is also logged and the module's teardown fails naming every
+host a test reached for. The hooks are per module, not one import-time patch, so the
+live file, which binds neither, still reaches the network.
+`tests/test_offline_guard.py` pins both halves: the guard's behavior, and which modules
+carry it (read from each file's syntax tree). Every `test_*.py` in this folder or in
+`tests/` but the live one must bind the two hooks, so a new test module in either place
+fails that test until it does. A guard whose start fails midway undoes what it had
+done, because unittest skips a module's teardown after its setup errors.

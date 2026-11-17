@@ -1,495 +1,301 @@
-"""Artwork resolution against a fake fetcher.
+"""Aggregator: imports every tests/ suite so a coverage run measures one unit.
 
-No test in this file touches the network. The live boundary test lives in
-tests/test_live_artwork.py, whose live class skips when offline; `load_tests` below
-folds it, and the matcher's own suite in tests/, into this module's run.
+This file holds no tests of its own beyond the guards below. Every test of `cover_art`
+and of the modules under `src/` lives in a tests/test_*.py file, and `load_tests` folds
+them all into this module's run, so running this one file runs every suite.
+
+The floors below are deliberately restated, not derived. A floor computed from
+discovery compares discovery against itself and passes for an empty suite, which is the
+defect this guard exists to catch. What is derived is the file set: `_tests_by_module`
+flattens the suite `load_tests` folds into the real run into a per-file count, and
+`GroupedSuiteDiscoveryTest.test_grouped_suite_meets_its_own_per_file_floor` checks
+that count's key set against `_MIN_TESTS_BY_FILE`'s, so a new tests/test_*.py arrives
+unfloored loudly, not silently absorbed into a combined total. That table, not this
+docstring, is the list of suites.
+
+``_SUITE_DIR`` is the discovery root for ``_grouped_suite()``, with
+``top_level_dir=str(_SUITE_DIR)`` so a grouped module's ``__module__`` is its bare
+filename (``test_artwork_url``, not ``tests.test_artwork_url``). That avoids the mypy
+"Source file found twice under different module names" conflict a package-style
+``from tests import test_artwork_url`` import produces the moment ``discover()`` and an
+explicit import disagree on one file's qualified name.
 """
 
 from __future__ import annotations
 
-import datetime as dt
-import http.client
-import json
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
-_TOOL_ROOT = Path(__file__).resolve().parent
-sys.path[:0] = [str(_TOOL_ROOT)]
+_HERE = Path(__file__).resolve().parent
+_SUITE_DIR = _HERE / "tests"
+sys.path.insert(0, str(_SUITE_DIR))
 
-from cover_art import (  # noqa: E402 - import follows the sys.path bootstrap above
-    _is_recordable_url,
-    artwork_url,
-)
-from cover_art import AlbumRef  # noqa: E402 - import follows the sys.path bootstrap above
-from hypothesis import (  # noqa: E402 - import follows the sys.path bootstrap above
-    HealthCheck,
-    given,
-    settings,
-    strategies as st,
-)
+from _offline_guard import setUpModule, tearDownModule  # noqa: E402, F401 - the bootstrap above; unittest calls the hooks by name
 
-# A registered profile, loaded here before any class body, never an `@settings`
-# decorator: a `@given` test snapshots its settings when it is decorated, so a load
-# after the class bodies would be a no-op, and a longer fuzzing run re-applies its
-# own settings object to each target, which Hypothesis refuses on a function already
-# carrying one. Its own name: `load_profile` sets one global default, so a
-# name shared with another module's profile would let import order decide which
-# settings each had snapshotted.
+# Restated, not derived (see module docstring): a floor computed from discovery would
+# compare discovery against itself and pass for an empty suite.
+_MIN_TESTS_BY_FILE: dict[str, int] = {
+    # The catalog fallback: asked only on a miss, only for an artistId a same-artist
+    # candidate supplied, at most twice, and ranked by the same matcher.
+    "test_artist_catalog.py": 9,
+    # The pure matcher: name normalization, `pick_album`'s choice over a captured
+    # reply's candidate set, that reply end to end through `artwork_url`, and the
+    # name-length cap ahead of the qualifier strip.
+    "test_artwork_match.py": 23,
+    # NFKC again after casefold and on the flattened words: each letter casefold
+    # splits, an accent a deleted apostrophe leaves, caseless spellings picked as one
+    # album, normalize idempotent as a property, and why the own text needs neither.
+    "test_artwork_match_casefold.py": 14,
+    # The raw-length refusal ahead of the normalized cap: an over-long name refused
+    # without normalizing it, a fully decomposed name at the cap still matched, and
+    # the derivation's longest decomposition checked over every code point.
+    "test_artwork_match_raw_bound.py": 3,
+    # The matcher over every script, not ASCII alone: each script's letters kept,
+    # full-width qualifiers, non-Latin albums told apart, variation selectors, and the
+    # flatten's invariants as properties.
+    "test_artwork_match_scripts.py": 38,
+    # A title with no letter, digit or mark compared by its own text: symbol titles by
+    # one artist told apart, "&" kept apart from "and", and its spellings and bound;
+    # each qualifier group by the same rule, as a property too, and blank names refused.
+    "test_artwork_match_symbols.py": 37,
+    # A redirect off https is never followed, through the real opener with urllib's
+    # protocol handlers scripted.
+    "test_artwork_redirect.py": 3,
+    # `artwork_url` against a fake fetcher, one branch of the parse per test: the
+    # wrong-album guard, the URL rewrite, every malformed field and body, and every
+    # failure that must come back as no cover rather than an exception.
+    "test_artwork_url.py": 23,
+    # `artwork_url`'s never-raise contract as two properties: over hostile response
+    # bodies and over arbitrary AlbumRef text.
+    "test_artwork_url_properties.py": 2,
+    # The candidate pool: the search window asked for, and an unusable collectionId
+    # kept rather than deduped against.
+    "test_candidate_pool.py": 2,
+    # cover_art's copies of the bounded read and the redirect rule held to
+    # bounded_fetch's originals, case by case.
+    "test_fetch_parity.py": 7,
+    # Always 4: the live class is loaded and counted whether or not COVER_ART_OFFLINE
+    # later skips it at run time, beside the reachability probe's own classification.
+    "test_live_artwork.py": 4,
+    # Why a cover came back null: each miss names its cause, a found cover none.
+    "test_miss_reason.py": 9,
+    # Each property module's profile registered and loaded before its first class of
+    # @given tests, read off its syntax tree, the checker that reads it, and each
+    # profile's missing deadline.
+    "test_hypothesis_profile_order.py": 17,
+    # The offline tripwire: what it refuses and lets through, and which modules carry
+    # it, read off each file's syntax tree.
+    "test_offline_guard.py": 10,
+    # The bounded body read: its cap and deadline on an in-memory response, and the
+    # real fetch against a loopback server.
+    "test_read_body.py": 12,
+    # What `_real_fetch` does around its opener's `open`, faked.
+    "test_real_fetch.py": 1,
+    # Only an https URL with a host is recorded: the predicate, and `artwork_url`
+    # consulting it.
+    "test_recordable_url.py": 7,
+}
+# This module's own tests: the guards below, which are the only reason the file exists.
+# Kept apart from the grouped floors rather than summed into one total. A combined number
+# carries the grouped suites' growth as slack, and these guards are small enough to vanish
+# inside it: two added grouped tests would buy the silent deletion of both. Counted
+# apart, no amount of grouped growth pays for a deleted guard.
 #
-# `too_slow` is the one health check suppressed. The first draw of a text strategy
-# builds Hypothesis's unicode tables, once per storage directory, inside the ~1 s that
-# check allows the first examples, so on a fresh clone whichever property drew text
-# first failed with `FailedHealthCheck: Input generation is slow`, then passed: a cold
-# cache, not a slow strategy. tests/test_cold_hypothesis_cache.py holds the timings and
-# is the regression test. The in-suite run keeps its default randomization, which the
-# acceptance figures recorded at `_decodable_response_bodies` below were measured under.
-# deadline=None: a per-example wall-clock deadline measures machine load, not
-# correctness, so a busy machine would report a passing property as flaky.
-settings.register_profile(
-    "cover_art_properties",
-    suppress_health_check=[HealthCheck.too_slow],
-    deadline=None,
-)
-settings.load_profile("cover_art_properties")
-
-REF = AlbumRef(artist="An Artist", album="A Record", added=dt.date(2026, 8, 30))
-
-
-def fake_body(payload: object) -> bytes:
-    """Encode a JSON-able payload the way an HTTP response body would arrive."""
-    return json.dumps(payload).encode("utf-8")
-
-
-def matching_result(**overrides: object) -> dict[str, object]:
-    """A search result that verifies as REF's album.
-
-    A result is only used when it is demonstrably the album that was asked for, so a
-    fixture meaning "the store found it" has to carry the artist and title as well as
-    an artwork URL. A bare `{"artworkUrl100": ...}` means "some other album"; accepting
-    that payload is the defect this suite guards.
-    """
-    result: dict[str, object] = {
-        "artistName": "An Artist",
-        "collectionName": "A Record",
-        "collectionId": 1,
-        "releaseDate": "1994-01-01T00:00:00Z",
-        "trackCount": 10,
-        "artworkUrl100": "https://example.com/a/100x100bb.jpg",
-    }
-    result.update(overrides)
-    return result
-
-
-class ArtworkUrlTest(unittest.TestCase):
-    """`artwork_url` against a fake fetcher covering every branch of the parse."""
-
-    def test_a_hit_returns_an_upsized_artwork_url(self) -> None:
-        body = fake_body({"resultCount": 1, "results": [matching_result()]})
-        match = artwork_url(REF, fetch=lambda _u, _t: body)
-        self.assertEqual(match.url, "https://example.com/a/400x400bb.webp")
-
-    def test_a_result_for_a_DIFFERENT_album_yields_no_url(self) -> None:
-        # The wrong-cover defect, as a unit test: taking the first result would return
-        # this cover, and it belongs to a different record entirely.
-        body = fake_body(
-            {
-                "resultCount": 1,
-                "results": [
-                    matching_result(collectionName="Some Other Record", trackCount=7)
-                ],
-            }
-        )
-        self.assertIsNone(artwork_url(REF, fetch=lambda _u, _t: body).url)
-
-    def test_the_default_format_is_webp(self) -> None:
-        # Measured 2026-09-01: the same 400x400 art is 14,192 bytes as WebP against
-        # 34,757 as JPEG, 59% smaller at identical dimensions, indistinguishable at
-        # the size it is rendered at.
-        body = fake_body({"resultCount": 1, "results": [matching_result()]})
-        match = artwork_url(REF, fetch=lambda _u, _t: body)
-        self.assertEqual(match.url, "https://example.com/a/400x400bb.webp")
-
-    def test_the_format_is_the_callers_choice(self) -> None:
-        body = fake_body({"resultCount": 1, "results": [matching_result()]})
-        match = artwork_url(REF, fetch=lambda _u, _t: body, image_format="jpg")
-        self.assertEqual(match.url, "https://example.com/a/400x400bb.jpg")
-
-    def test_only_the_FINAL_extension_is_rewritten(self) -> None:
-        # The trap. A real artwork URL carries the source file's own ".jpg" mid-path
-        # (".../075679854247.jpg/100x100bb.jpg"), so a naive replace of ".jpg" would
-        # corrupt the path and 404. Only the last segment's extension may change.
-        body = fake_body(
-            {
-                "resultCount": 1,
-                "results": [
-                    matching_result(
-                        artworkUrl100="https://example.com/a/075679854247.jpg/100x100bb.jpg"
-                    )
-                ],
-            }
-        )
-        match = artwork_url(REF, fetch=lambda _u, _t: body)
-        self.assertEqual(
-            match.url, "https://example.com/a/075679854247.jpg/400x400bb.webp"
-        )
-
-    def test_the_requested_width_is_what_gets_substituted(self) -> None:
-        # Measured 2026-09-01: Apple's resizer honored every width tried exactly, so
-        # the size is the caller's to choose rather than a constant fixed in here.
-        body = fake_body({"resultCount": 1, "results": [matching_result()]})
-        match = artwork_url(REF, fetch=lambda _u, _t: body, width=250)
-        self.assertEqual(match.url, "https://example.com/a/250x250bb.webp")
-
-    def test_an_empty_result_set_yields_no_url(self) -> None:
-        match = artwork_url(
-            REF, fetch=lambda _u, _t: fake_body({"resultCount": 0, "results": []})
-        )
-        self.assertIsNone(match.url)
-
-    def test_a_result_with_no_artwork_field_yields_no_url(self) -> None:
-        body = fake_body(
-            {"resultCount": 1, "results": [matching_result(artworkUrl100=None)]}
-        )
-        self.assertIsNone(artwork_url(REF, fetch=lambda _u, _t: body).url)
-
-    def test_a_non_string_artwork_field_yields_no_url(self) -> None:
-        # The field exists but is the wrong type (e.g. a malformed upstream record),
-        # a distinct branch from the field being absent entirely.
-        body = fake_body(
-            {"resultCount": 1, "results": [matching_result(artworkUrl100=12345)]}
-        )
-        self.assertIsNone(artwork_url(REF, fetch=lambda _u, _t: body).url)
-
-    def test_a_results_field_that_is_not_a_list_yields_no_url(self) -> None:
-        # A 2xx body of the wrong shape: valid JSON, wrong contract. Distinct from
-        # unparseable, and reachable from a proxy or an API change.
-        body = fake_body({"resultCount": 1, "results": {"not": "a list"}})
-        self.assertIsNone(artwork_url(REF, fetch=lambda _u, _t: body).url)
-
-    def test_the_right_album_with_no_release_date_still_yields_its_url(self) -> None:
-        # The album is identified by name; the year is simply unavailable. The cover
-        # must still be used: the year is a bonus, not a precondition.
-        body = fake_body(
-            {"resultCount": 1, "results": [matching_result(releaseDate=None)]}
-        )
-        match = artwork_url(REF, fetch=lambda _u, _t: body)
-        self.assertEqual(match.url, "https://example.com/a/400x400bb.webp")
-        self.assertIsNone(match.year)
-
-    def test_an_unparseable_release_date_yields_a_url_with_no_year(self) -> None:
-        body = fake_body(
-            {"resultCount": 1, "results": [matching_result(releaseDate="not-a-date")]}
-        )
-        match = artwork_url(REF, fetch=lambda _u, _t: body)
-        self.assertIsNotNone(match.url)
-        self.assertIsNone(match.year)
-
-    def test_a_release_date_in_SUPERSCRIPT_digits_yields_a_url_with_no_year(
-        self,
-    ) -> None:
-        # `releaseDate` is remote input, and "²⁰²⁵" satisfies str.isdigit() while int()
-        # rejects it, so an isdigit() year guard admits a value the conversion then
-        # refuses, raising ValueError out of the year parse at a call site outside the try
-        # that guards the search. Regression for that uncaught raise: the never-raises
-        # contract has to hold for every digit-ish year, not only for text that is
-        # obviously not a date like the case above.
-        body = fake_body(
-            {"resultCount": 1, "results": [matching_result(releaseDate="²⁰²⁵-01-01")]}
-        )
-        match = artwork_url(REF, fetch=lambda _u, _t: body)
-        self.assertIsNotNone(match.url)
-        self.assertIsNone(match.year)
-
-    def test_a_release_date_in_NON_ASCII_decimal_digits_still_yields_its_year(
-        self,
-    ) -> None:
-        # The other half of why that guard is isdecimal() rather than the stricter
-        # `isascii() and isdigit()`: Arabic-Indic "٢٠٢٥" is a real year and int()
-        # parses it to 2025, so clamping to ASCII would stop the raise above by
-        # discarding a good answer instead. This pins the accepted half, so
-        # over-tightening the guard fails here rather than passing silently.
-        body = fake_body(
-            {"resultCount": 1, "results": [matching_result(releaseDate="٢٠٢٥-01-01")]}
-        )
-        match = artwork_url(REF, fetch=lambda _u, _t: body)
-        self.assertIsNotNone(match.url)
-        self.assertEqual(match.year, 2025)
-
-    def test_an_UNHASHABLE_collection_id_yields_a_url_rather_than_raising(
-        self,
-    ) -> None:
-        # `collectionId` is remote input and is used as the pool's dedup key, so it
-        # lands in a set. A JSON array or object there is legal JSON that decodes to
-        # an unhashable list/dict, and an unguarded `key in seen` raises TypeError out
-        # of `artwork_url`, from a line outside the try that guards `_search`, so the
-        # never-raises contract breaks just as it would for the release year. An id
-        # that cannot be hashed carries no usable identity, so it is treated as a
-        # missing one: the candidate is kept and simply never deduped against.
-        for unusable in ([1, 2], {"a": 1}):
-            with self.subTest(collection_id=unusable):
-                body = fake_body(
-                    {
-                        "resultCount": 1,
-                        "results": [matching_result(collectionId=unusable)],
-                    }
-                )
-                match = artwork_url(REF, fetch=lambda _u, _t: body)
-                self.assertEqual(match.url, "https://example.com/a/400x400bb.webp")
-
-    def test_a_non_json_body_yields_no_url(self) -> None:
-        # A proxy can return a non-JSON body with a 2xx status; json.loads must be guarded.
-        self.assertIsNone(
-            artwork_url(REF, fetch=lambda _u, _t: b"<html>nope</html>").url
-        )
-
-    def test_a_network_failure_yields_no_url_rather_than_raising(self) -> None:
-        def boom(_url: str, _timeout: float) -> bytes:
-            raise OSError("no route to host")
-
-        self.assertIsNone(artwork_url(REF, fetch=boom).url)
-
-    def test_a_truncated_http_response_yields_no_url_rather_than_raising(self) -> None:
-        # http.client.HTTPException (e.g. IncompleteRead, raised out of a real
-        # response.read() on a truncated chunked body) is neither OSError nor
-        # ValueError, so it needs its own arm in `_search`'s except clause, or it
-        # propagates straight out of artwork_url.
-        def truncated(_url: str, _timeout: float) -> bytes:
-            raise http.client.IncompleteRead(b"partial")
-
-        self.assertIsNone(artwork_url(REF, fetch=truncated).url)
-
-    def test_a_pathologically_nested_body_yields_no_url_rather_than_raising(
-        self,
-    ) -> None:
-        # json.loads' recursive-descent parser raises RecursionError (a RuntimeError,
-        # not a ValueError) once nesting exceeds the interpreter's stack budget.
-        # Real network bodies are not bounded the way the property test's
-        # st.binary(max_size=2048) samples are, so this is reachable in production
-        # even though it never surfaces from the capped fuzz strategy.
-        deeply_nested = b"[" * 2_000_000
-        self.assertIsNone(artwork_url(REF, fetch=lambda _u, _t: deeply_nested).url)
-
-    def test_the_query_carries_both_artist_and_album(self) -> None:
-        seen: list[str] = []
-
-        def record(url: str, _timeout: float) -> bytes:
-            seen.append(url)
-            return fake_body({"resultCount": 0, "results": []})
-
-        artwork_url(REF, fetch=record)
-        self.assertIn("An+Artist", seen[0])
-        self.assertIn("A+Record", seen[0])
-        # both queries run and are pooled before ranking. Returning after the first
-        # lets the wrong album win: the store does not always use the library's name,
-        # so the right record can appear only in the second.
-        self.assertEqual(len(seen), 2)
-        self.assertNotIn("A+Record", seen[1])
-
-    def test_the_timeout_is_passed_through_to_the_fetcher(self) -> None:
-        seen: list[float] = []
-
-        def record(_url: str, timeout: float) -> bytes:
-            seen.append(timeout)
-            return fake_body({"resultCount": 0, "results": []})
-
-        artwork_url(REF, fetch=record, timeout=2.5)
-        self.assertEqual(seen, [2.5, 2.5])
-
-    def test_a_surrogate_in_the_artist_yields_no_url_rather_than_raising(self) -> None:
-        # Regression guard: with urllib.parse.urlencode outside `_search`'s try
-        # block, a lone surrogate in ref.artist (or ref.album) raises
-        # UnicodeEncodeError straight out of this "never raises" function.
-        # Unreachable via a real macOS folder scan (APFS rejects such names), but
-        # reachable when the folder scan runs off macOS, where a lossy filename decode
-        # can hand this exact input. UnicodeEncodeError is a ValueError subclass,
-        # already in `_search`'s except tuple, so building the query inside the try is
-        # the entire fix: this test fails without that and passes with it.
-        bad_ref = AlbumRef(
-            artist="An Artist \udcff", album="A Record", added=dt.date(2026, 8, 30)
-        )
-        body = fake_body({"resultCount": 0, "results": []})
-        self.assertIsNone(artwork_url(bad_ref, fetch=lambda _u, _t: body).url)
-
-    def test_a_surrogate_in_the_album_yields_no_url_rather_than_raising(self) -> None:
-        bad_ref = AlbumRef(
-            artist="An Artist", album="A Record \udcff", added=dt.date(2026, 8, 30)
-        )
-        body = fake_body({"resultCount": 0, "results": []})
-        self.assertIsNone(artwork_url(bad_ref, fetch=lambda _u, _t: body).url)
-
-
-# The two halves of `str.isdigit()`, computed rather than listed so the split cannot
-# go stale against a new Unicode version. `DECIMAL` is the set `int()` accepts;
-# NON_DECIMAL is the rest of isdigit() (superscripts and the like), and a year
-# guard's bugs live on that boundary. The scan costs ~0.09s at import, which
-# is the price of not hardcoding a character table that would quietly rot.
-_DECIMAL_DIGITS = tuple(
-    character
-    for character in map(chr, range(sys.maxunicode + 1))
-    if character.isdecimal()
-)
-_NON_DECIMAL_DIGITS = tuple(
-    character
-    for character in map(chr, range(sys.maxunicode + 1))
-    if character.isdigit() and not character.isdecimal()
-)
-
-# A four-character year holding at least one non-decimal digit, built rather than
-# sampled: drawing four characters from the combined pool leaves the interesting case
-# to chance, and chance is what a never-raises property must not depend on. Sampling
-# was measured: the class this constructs turned up in 13% of draws, and the whole
-# property caught a reverted year guard in only 1 run out of 5.
-_adversarial_year = st.tuples(
-    st.lists(st.sampled_from(_DECIMAL_DIGITS), min_size=3, max_size=3),
-    st.sampled_from(_NON_DECIMAL_DIGITS),
-).flatmap(lambda parts: st.permutations([*parts[0], parts[1]]).map("".join))
-
-_date_like = st.builds(
-    lambda year, tail: year + tail,
-    st.one_of(
-        st.text(alphabet=st.sampled_from(_DECIMAL_DIGITS), min_size=4, max_size=4),
-        _adversarial_year,
-    ),
-    st.sampled_from(("", "-01-01", "-01-01T00:00:00Z")),
-)
-
-# Every type a JSON document can hand a field, containers included: a list or dict
-# is what makes an unhashable value reachable for a field used as a set key.
-_json_values = st.recursive(
-    st.one_of(
-        st.none(),
-        st.booleans(),
-        st.integers(),
-        st.floats(allow_nan=False, allow_infinity=False),
-        st.text(max_size=20),
-    ),
-    lambda children: st.one_of(
-        st.lists(children, max_size=3),
-        st.dictionaries(st.text(max_size=8), children, max_size=3),
-    ),
-    max_leaves=4,
-)
-
-# A body the parse can get through, which st.binary() cannot produce: arbitrary bytes
-# essentially never decode to JSON carrying a name-matching album, so every branch
-# past `json.loads` (the dedup key, the year parse, the URL rewrite) would sit
-# outside this target's input space. A ValueError in the year guard and a TypeError
-# in the dedup key both passed a green fuzz gate that way.
-#
-# The two name fields are deliberately left realistic, so the candidate always
-# verifies as REF's album and the downstream path always runs. Fuzzing them too would
-# spend most draws on the no-match early return, an axis already covered by
-# pick_album's own suite in tests/, by the different-album example test above, and by
-# the ref-side property test below. The gap was never the match; it was everything the
-# parse does to a field's value afterward.
-#
-# Acceptance, measured rather than eyeballed: each real defect was reverted in turn and
-# this property run 10 times, each against a fresh example database so every run is an
-# independent discovery rather than a replay. The year guard is caught 9/10, the dedup
-# key 10/10, against 1/5 for the year guard when the hazard was sampled for rather
-# than constructed by `_adversarial_year`. The two deterministic tests above are what
-# pin those defects exactly; this target's job is the next one nobody has named yet.
-#
-# A thumbnail that is URL-shaped enough to reach the final-segment rewrite, with
-# generated text (control characters and all) in its path. A bare `_json_values`
-# string almost never starts with a scheme, so without this arm the rewrite and the
-# recording rule after it would only ever see refusals of the cheapest kind.
-_url_like = st.text(max_size=20).map(
-    lambda tail: f"https://example.com/{tail}/100x100bb.jpg"
-)
-
-_decodable_response_bodies = st.fixed_dictionaries(
-    {
-        "collectionId": _json_values,
-        "releaseDate": st.one_of(_date_like, _json_values),
-        "trackCount": _json_values,
-        "artworkUrl100": st.one_of(_url_like, _json_values),
-    }
-).map(
-    lambda overrides: fake_body(
-        {"resultCount": 1, "results": [matching_result(**overrides)]}
-    )
-)
-
-
-class ArtworkUrlPropertyTest(unittest.TestCase):
-    """The never-crash invariant, over arbitrary response bodies."""
-
-    @given(st.one_of(st.binary(max_size=2048), _decodable_response_bodies))
-    def test_fuzz_artwork_url(self, body: bytes) -> None:
-        # Whatever the endpoint returns (truncated JSON, HTML, a proxy error page,
-        # binary noise, or a well-formed response whose field values are hostile),
-        # the caller gets a URL or None, never an exception. A cover that cannot be
-        # resolved is a normal outcome. And whatever is returned satisfies the recording
-        # rule: a URL the page may put in an `<img src>`. Asserting the rule here, not
-        # merely `str`, is what makes this property notice the rule's call site being
-        # removed: the generated bodies carry hostile thumbnails on nearly every draw.
-        result = artwork_url(REF, fetch=lambda _u, _t: body)
-        self.assertTrue(result.url is None or _is_recordable_url(result.url))
-
-
-# Printable text mixed with a deliberate chance of a lone surrogate: the class of
-# input the folder scan, run off macOS, can hand artwork_url via a lossy filename
-# decode (surrogateescape), and specifically the class the response-body-only fuzz
-# target above cannot reach. Hypothesis's default st.text() never generates a lone
-# surrogate on its own (verified: 2000 samples, zero hits), so proving the
-# never-raises contract over this input space needs it explicitly in the alphabet,
-# not merely a wide codepoint range.
-_hazardous_text = st.text(
-    alphabet=st.one_of(
-        st.characters(min_codepoint=0x20, max_codepoint=0x10FFFF),
-        st.characters(min_codepoint=0xD800, max_codepoint=0xDFFF),
-    ),
-    max_size=40,
-)
-
-_ref_strategy = st.builds(
-    AlbumRef,
-    artist=_hazardous_text,
-    album=_hazardous_text,
-    added=st.just(dt.date(2026, 8, 30)),  # never touches the encoding path
-)
-
-
-class ArtworkUrlAlbumRefPropertyTest(unittest.TestCase):
-    """The never-crash invariant, over arbitrary AlbumRef artist/album text.
-
-    A second, deliberately differently-named property test rather than a second
-    `# fuzz-target`-matching `test_fuzz_artwork_url`: a marker pairs with exactly one
-    `test_fuzz_<name>`, and a second one sharing that prefix without a matching
-    marker of its own would read as an orphan property test.
-    `artwork_url` has exactly one `# fuzz-target` marker either way, already satisfied
-    by `test_fuzz_artwork_url` above; this class extends the input space that marker's
-    contract is proven over, not the marker count.
-    """
-
-    @given(_ref_strategy, st.binary(max_size=256))
-    def test_the_never_raises_contract_holds_over_arbitrary_album_ref_fields(
-        self, ref: AlbumRef, body: bytes
-    ) -> None:
-        result = artwork_url(ref, fetch=lambda _u, _t: body)
-        self.assertTrue(result.url is None or isinstance(result.url, str))
+# Restated, not counted off the class below: a count taken from that class falls by one
+# when a guard is deleted, so it would pass for the very deletion it exists to catch.
+# Exact rather than a floor: under ``>=`` an added guard becomes room a later deletion
+# can hide in.
+_OWN_GUARD_TESTS = 3
 
 
 def _grouped_suite() -> unittest.TestSuite:
     """Every test in tests/, discovered by walking the directory."""
     loader = unittest.TestLoader()
-    suite_dir = Path(__file__).resolve().parent / "tests"
     return loader.discover(
-        str(suite_dir), pattern="test_*.py", top_level_dir=str(suite_dir)
+        str(_SUITE_DIR), pattern="test_*.py", top_level_dir=str(_SUITE_DIR)
     )
+
+
+class _SuiteImportError(RuntimeError):
+    """A tests/ module did not import, so no census of that suite can be trusted."""
+
+
+def _import_failure_message(test: unittest.TestCase) -> str | None:
+    """Why `discover` could not import this leaf's module, or None for a real test.
+
+    `unittest.TestLoader.discover` does not raise on a module it cannot import: it
+    substitutes a placeholder whose class lives in the loader's own module, so the
+    broken module drops out of the census entirely and a loader-owned key appears in
+    its place. Both guards below would then fail for the wrong stated reason: the key
+    set names the loader, and the total falls short by the broken file's whole test
+    count, which reads as a stale floor and invites lowering the number. That trades a
+    hard failure for a permanent silent gap, so the census refuses instead.
+
+    Matched on the placeholder's defining module, never on a spelled-out module name and
+    never on unittest's private placeholder class. Running the placeholder re-raises the
+    original error with its message intact, which is the whole of the recovery.
+    """
+    if type(test).__module__ != unittest.loader.__name__:
+        return None
+    outcome = unittest.TestResult()
+    test.run(outcome)
+    # A placeholder always errors (raising the stored import error is the only thing
+    # it does), so an empty `errors` would be unittest itself changing shape, and an
+    # IndexError reports that more honestly than a fallback string pretending to explain.
+    _, traceback_text = outcome.errors[0]
+    detail = traceback_text.strip().splitlines()[-1]
+    module = test.id().rsplit(".", 1)[-1]
+    return (
+        f"tests/{module}.py failed to import, so it is absent from this census and "
+        f"every count is measuring its absence: {detail}. Fix the import; do not "
+        "lower a floor to match the shortfall."
+    )
+
+
+def _tests_by_module(suite: unittest.TestSuite) -> dict[str, int]:
+    """Flatten a (possibly nested) test suite into a per-module test count.
+
+    ``unittest.TestLoader.discover`` returns a suite of suites (one layer per
+    directory/module it walked), so this recurses through the nesting rather than
+    assuming a fixed depth; it keeps working if discovery's internal structure ever
+    changes. Each leaf test case's ``__module__`` (e.g. ``"test_artwork_url"``) becomes
+    a ``"test_artwork_url.py"`` key, matching ``_MIN_TESTS_BY_FILE``'s keys.
+
+    Raises ``_SuiteImportError`` when any leaf is a discovery placeholder: a module that
+    failed to import is absent from the counts rather than reported by them, so a census
+    over such a suite would be measuring the wrong thing. See
+    ``_import_failure_message``.
+    """
+    counts: dict[str, int] = {}
+    for item in suite:
+        if isinstance(item, unittest.TestSuite):
+            for module, count in _tests_by_module(item).items():
+                counts[module] = counts.get(module, 0) + count
+        else:
+            # Ahead of the count, and here rather than in each guard: every census runs
+            # through this branch, so there is no call site left to omit.
+            if (message := _import_failure_message(item)) is not None:
+                raise _SuiteImportError(message)
+            filename = f"{type(item).__module__}.py"
+            counts[filename] = counts.get(filename, 0) + 1
+    return counts
+
+
+class GroupedSuiteDiscoveryTest(unittest.TestCase):
+    """Fail loudly when this module's real test load is missing a grouped suite,
+    not merely when `tests/`, read directly off disk, is missing one.
+
+    A test that instead called `_grouped_suite()` directly shares its subject's own
+    failure mode: `load_tests` and such a guard would both call the same helper, so
+    deleting or renaming `load_tests` (which silently stops every suite under `tests/`
+    from running as part of the real invocation) would leave the guard re-deriving the
+    same count fresh off disk and staying green regardless. `unittest.TestLoader().
+    loadTestsFromModule` is what `python test_cover_art.py` and a coverage run
+    use to build the real suite, and it honors the `load_tests` protocol (calling the
+    function below if present, and returning only this module's own tests
+    otherwise), so this is what actually depends on that wiring.
+    """
+
+    def test_module_load_includes_the_grouped_suites(self) -> None:
+        loaded = _tests_by_module(
+            unittest.TestLoader().loadTestsFromModule(sys.modules[__name__])
+        )
+        own_found = loaded.pop(f"{__name__}.py", 0)
+        self.assertEqual(
+            own_found,
+            _OWN_GUARD_TESTS,
+            f"this module contributed {own_found} of its own tests, expected exactly "
+            f"{_OWN_GUARD_TESTS}: a guard above may have been deleted, or a new one "
+            f"added without raising _OWN_GUARD_TESTS",
+        )
+        # Derived from the per-file floors rather than restated as a second total: that
+        # dict is a written-down literal, not a count taken from discovery, so summing it
+        # still measures the suite against a number from outside it.
+        grouped_found = sum(loaded.values())
+        grouped_floor = sum(_MIN_TESTS_BY_FILE.values())
+        self.assertGreaterEqual(
+            grouped_found,
+            grouped_floor,
+            f"loading this module yielded {grouped_found} grouped tests, expected at "
+            f"least {grouped_floor}: load_tests may have been removed or renamed, "
+            f"silently dropping a tests/ suite from the real run",
+        )
+
+    def test_grouped_suite_meets_its_own_per_file_floor(self) -> None:
+        """Fail loudly when one grouped file has lost tests, and when a new
+        tests/test_*.py arrives with no floor entry in `_MIN_TESTS_BY_FILE` at all.
+        """
+        found_by_file = _tests_by_module(_grouped_suite())
+        # The full key set is compared both ways. Without that, a new tests/test_*.py
+        # with no entry here would be unfloored, its whole-file loss caught only by the
+        # grouped sum in the guard above, which a compensating gain elsewhere can mask.
+        # With it, an unmapped new file (or a mapped file that no longer exists) fails
+        # loudly, here, before any test count is compared.
+        self.assertEqual(
+            found_by_file.keys(),
+            _MIN_TESTS_BY_FILE.keys(),
+            "tests/ discovery and _MIN_TESTS_BY_FILE disagree on which files exist: "
+            f"found {sorted(found_by_file)}, mapped {sorted(_MIN_TESTS_BY_FILE)}",
+        )
+        for filename, floor in _MIN_TESTS_BY_FILE.items():
+            found = found_by_file.get(filename, 0)
+            self.assertGreaterEqual(
+                found,
+                floor,
+                f"tests/{filename} yielded {found} tests, expected at least "
+                f"{floor}: a test may have been removed from it",
+            )
+
+    def test_a_module_that_fails_to_import_is_named_with_its_own_error(self) -> None:
+        """A census over a suite holding a discovery placeholder refuses, by name.
+
+        Built on a throwaway directory, because proving this against the real `tests/`
+        would mean breaking one of them. The broken module imports a missing name from a
+        sibling rather than a missing module outright: that is the shape the real defect
+        takes, a re-export that stopped being re-exported.
+        """
+        with TemporaryDirectory() as raw:
+            root = Path(raw)
+            (root / "sibling_of_the_broken.py").write_text(
+                "EXPORTED = 1\n", encoding="utf-8", newline="\n"
+            )
+            (root / "test_sound_one.py").write_text(
+                "import unittest\n"
+                "class Sound(unittest.TestCase):\n"
+                "    def test_passes(self) -> None:\n"
+                "        pass\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            (root / "test_broken_one.py").write_text(
+                "from sibling_of_the_broken import never_exported\n",
+                encoding="utf-8",
+                newline="\n",
+            )
+            # `discover` inserts its top_level_dir and never removes it, and this
+            # directory is about to be deleted, so put sys.path back rather than leave a
+            # dead entry in the process every other suite here shares.
+            self.addCleanup(sys.path.__setitem__, slice(None), list(sys.path))
+            suite = unittest.TestLoader().discover(
+                str(root), pattern="test_*.py", top_level_dir=str(root)
+            )
+            with self.assertRaises(_SuiteImportError) as raised:
+                _tests_by_module(suite)
+        message = str(raised.exception)
+        self.assertIn("test_broken_one", message)
+        self.assertIn("never_exported", message)
 
 
 def load_tests(
     _loader: unittest.TestLoader, tests: unittest.TestSuite, _pattern: str | None
 ) -> unittest.TestSuite:
-    """unittest's hook: fold every suite in tests/ in beside this file's own tests.
+    """unittest's hook: fold the grouped suite in beside this file's own guards.
 
-    That is the matcher's suite and the live boundary suite. Their files are unpaired
-    to any subject, so the gate prunes tests/ and reaches it only through this hook:
-    without it neither suite would run under the gate at all, and
-    `src/artwork_match.py` would be measured without its own tests.
+    Running this file is how the tests/ suites run: without this hook none of them
+    would run under it, and the modules under `src/` would be measured without their
+    own tests.
     """
     return unittest.TestSuite([tests, _grouped_suite()])
 

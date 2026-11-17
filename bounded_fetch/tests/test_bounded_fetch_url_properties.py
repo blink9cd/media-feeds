@@ -4,8 +4,9 @@
 `test_fuzz_https_url_or_none` is the property that satisfies it. Anything the rule
 accepts is what a record may carry and what a request may be built from, so the
 property holds every accepted string to the whole contract (https with a host,
-no userinfo, no space, control or format character) over arbitrary text and over
-URL-shaped strings built from schemes, userinfo, hosts, slashes and backslashes.
+no userinfo, no backslash in the netloc, no space, control or format character)
+over arbitrary text and over URL-shaped strings built from schemes, userinfo,
+hosts, slashes and backslashes.
 The rule never raises: a string it cannot parse is "no URL".
 """
 
@@ -22,17 +23,17 @@ from hypothesis import strategies as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import bounded_fetch  # noqa: E402 - import follows the sys.path bootstrap above
+import bounded_fetch
 
 # Determinism convention: a registered Hypothesis profile loaded at import.
 # deadline=None: a wall-clock deadline measures machine load, not correctness.
 settings.register_profile(
-    "fuzz_gate_deterministic",
+    "deterministic",
     derandomize=True,
     deadline=None,
     suppress_health_check=[HealthCheck.too_slow],
 )
-settings.load_profile("fuzz_gate_deterministic")
+settings.load_profile("deterministic")
 
 #: The pieces a URL-shaped string is built from, each biased toward a way a URL can
 #: lie about its scheme, its host or who it logs in as.
@@ -45,7 +46,7 @@ _USERINFO = st.sampled_from(["", "u@", "u:p@", ":@", "@", "a.b\\@", "u@v@"])
 #: controls and format characters from ASCII, C1 and wider Unicode.
 _URL_CHARS = st.sampled_from(
     [*"ab.-:@[]/?#%\\ ", "\t", "\n", "\r", "\x00", "\x1b", "\x85", "\xa0"]
-    + ["​", "‮", " ", "　"]
+    + ["\u200b", "\u202e", "\u2028", "\u3000"]
 )
 _URL_TEXT = st.text(alphabet=_URL_CHARS, max_size=12)
 #: What may pad a URL on either side: characters `urlsplit` strips on its own.
@@ -67,6 +68,14 @@ _SAFE_TEXT = st.text(alphabet=st.sampled_from([*"ab.-/?#%"]), max_size=6)
 _HTTPS_SHAPED = st.builds(
     "https://a{}{}{}".format, _SAFE_TEXT, _URL_CHARS | st.characters(), _SAFE_TEXT
 )
+#: An https URL whose whole netloc is drawn from host characters, the `\` a browser
+#: reads differently from `urlsplit`, and the `@` and `:` it interacts with. The
+#: strategies above plant one character among many, so they rarely put a backslash
+#: in the host itself; this one does so in most examples.
+_NETLOC_SHAPED = st.builds(
+    "https://{}/x".format,
+    st.text(alphabet=st.sampled_from([*"ab.-:@\\"]), min_size=1, max_size=10),
+)
 
 
 def _is_unsafe_character(char: str) -> bool:
@@ -77,7 +86,7 @@ def _is_unsafe_character(char: str) -> bool:
 class HttpsUrlProperties(unittest.TestCase):
     """Anything `https_url_or_none` accepts is a whole https URL with a host, as typed."""
 
-    @given(st.one_of(st.text(), _URL_SHAPED, _HTTPS_SHAPED))
+    @given(st.one_of(st.text(), _URL_SHAPED, _HTTPS_SHAPED, _NETLOC_SHAPED))
     def test_fuzz_https_url_or_none(self, url: str) -> None:
         """Accepted means verbatim, https, a host, no userinfo, no unsafe character."""
         accepted = bounded_fetch.https_url_or_none(url)
@@ -92,6 +101,9 @@ class HttpsUrlProperties(unittest.TestCase):
         self.assertEqual(parts.scheme, "https")
         self.assertTrue(parts.hostname, url)
         self.assertNotIn("@", parts.netloc, url)
+        # A browser reads `\` as `/` in an https URL, so a backslash in the netloc
+        # would send a page's link to a host this parse never saw.
+        self.assertNotIn("\\", parts.netloc, url)
 
 
 if __name__ == "__main__":

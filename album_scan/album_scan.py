@@ -20,8 +20,9 @@ tool has no knowledge of any particular consumer.
 
 Private `src/` modules carry most of the work: every lookup (`src/album_lookups.py`),
 the Apple boundary that finds and loads the toolbox (`src/apple_source.py`), the
+recorder that names why Music.app answered nothing (`src/music_causes.py`), the
 folder-scan discovery (`src/folder_scan.py`), the folder's own tags
-(`src/folder_facts.py`), the record's shape (`src/record_builder.py`), the stdout
+(`src/folder_facts.py`, its read cap in `src/capped_read.py` and its compressed-frame bound in `src/capped_zlib.py`), the record's shape (`src/record_builder.py`), the stdout
 writer (`src/record_writer.py`) and the stderr notices beyond the outcome lines
 (`src/notices.py`), and the `--cover-report` file (`src/cover_report.py`). A record file is written by `feed_read.write_records`, the writer
 every adapter in this project shares. `__all__` below is what this module re-exports
@@ -93,6 +94,7 @@ from cover_report import (  # noqa: E402 - follows the sys.path bootstrap
     report_entry,
     write_cover_report,
 )
+from music_causes import is_permission_denied  # noqa: E402 - follows the bootstrap
 from notices import (  # noqa: E402 - follows the sys.path bootstrap
     report_degradation,
     terminal_safe_text,
@@ -141,6 +143,10 @@ _EXIT_NO_ALBUM = 1
 #: Music.app source finds no apple-music-toolbox. argparse's own usage errors exit 2
 #: as well, so every "fix the command line" outcome shares one code.
 _EXIT_UNUSABLE_PATH = 2
+#: Music.app refused the Automation permission: a failure a scheduler must report, unlike
+#: an empty answer (1), so the grant's loss is never mistaken for a quiet day. Under
+#: auto it holds even when the folder fallback found and wrote a record.
+_EXIT_AUTOMATION_DENIED = 3
 
 
 def _write_records(records: list[AlbumRecord], target: str) -> int:
@@ -194,6 +200,21 @@ def _toolbox_for(args: argparse.Namespace, run: Runner | None) -> Toolbox | None
     )
 
 
+def _no_album_line(source: str, library: Path, cause: str | None) -> str:
+    """The stderr line for a run that found no album, naming where it looked.
+
+    --source folder, and auto once it falls back, both consulted the library and
+    found nothing there. --source music never touches the library at all, so naming
+    it would misdiagnose what happened; that line names why Music.app answered
+    nothing instead, when its recorded query says (`src/music_causes.py`).
+    """
+    if source != "music":
+        return f"album_scan: no album found under {library.name}"
+    if cause is None:
+        cause = "Music.app reported no recently added album"
+    return f"album_scan: no album: {cause}"
+
+
 def _toolbox_note(toolbox: Toolbox | None) -> str:
     """The success line's toolbox clause: the folder imported, so a wrong pick shows."""
     if toolbox is None:
@@ -213,7 +234,7 @@ def _record_for(
     Facts before artwork: the facts are resolved once and reused by both the record
     and the artwork match, whose tiebreakers they are (see `artwork_for`).
     """
-    facts = facts_for(ref, source, options)
+    facts, cause = facts_for(ref, source, options)
     match = artwork_for(
         ref,
         facts,
@@ -229,6 +250,7 @@ def _record_for(
         source=source,
         no_favorites=args.no_favorites,
         no_artwork=args.no_artwork,
+        facts_cause=cause,
     )
     record = album_record(ref, match.url, facts=facts, fallback_year=match.year)
     return record, report_entry(ref, cover_status(match, no_artwork=args.no_artwork))
@@ -394,19 +416,12 @@ def main(
         return _EXIT_UNUSABLE_PATH
 
     if not result.refs:
-        # Exit 1 means zero albums found and nothing written. Finding fewer than
-        # --count asked for is success, not this case.
-        if args.source == "music":
-            # --source folder, and auto once it falls back, both consulted the
-            # library and found nothing there; the message below covers both.
-            # --source music never touches the library at all, so naming it here
-            # would misdiagnose what actually happened.
-            print(
-                "album_scan: Music.app reported no recently added album",
-                file=sys.stderr,
-            )
-        else:
-            print(f"album_scan: no album found under {library.name}", file=sys.stderr)
+        # Exit 1 means zero albums found and nothing written, for any cause but a
+        # refused automation permission, which exits 3. Finding fewer than --count
+        # asked for is success, not this case.
+        print(_no_album_line(args.source, library, result.cause), file=sys.stderr)
+        if is_permission_denied(result.cause):
+            return _EXIT_AUTOMATION_DENIED
         return _EXIT_NO_ALBUM
 
     # One facts lookup and one artwork lookup per album, not one for the whole run:
@@ -441,6 +456,11 @@ def main(
         f"(source: {result.resolved_source}{_toolbox_note(toolbox)})",
         file=sys.stderr,
     )
+    # A refused grant under auto has already written the folder's record above, and
+    # still exits 3: a denial never passes as a quiet day. What a caller does with
+    # that record is the caller's.
+    if is_permission_denied(result.cause):
+        return _EXIT_AUTOMATION_DENIED
     return _EXIT_OK
 
 

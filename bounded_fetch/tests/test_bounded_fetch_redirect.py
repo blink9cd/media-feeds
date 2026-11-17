@@ -19,7 +19,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import bounded_fetch  # noqa: E402 - import follows the sys.path bootstrap above
+import bounded_fetch
 
 #: What the caller sends, and what must not reach a host it did not name.
 _CALLER_HEADERS = {"User-Agent": "probe/1.0", "Authorization": "Bearer t"}

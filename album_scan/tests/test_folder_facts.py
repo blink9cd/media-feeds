@@ -208,7 +208,9 @@ class FolderFactsTest(unittest.TestCase):
         self.assertEqual(self.unreadable, [])
 
     def test_a_corrupt_tag_counts_the_track_and_reports_it_by_name(self) -> None:
-        (self.album / "01.mp3").write_bytes(b"ID3\x04\x00\x00\x7f\x7f\x7f\x7fgarbage")
+        # A 127-byte tag the file does not hold: corrupt, and well under the read cap,
+        # so it takes the generic path (test_folder_facts_read_cap has the cap's own).
+        (self.album / "01.mp3").write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x7fgarbage")
         _write_mp3(self.album / "02.mp3", ratings=(("a@example.com", 255),))
         facts = self._facts()
         assert facts is not None

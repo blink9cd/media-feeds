@@ -391,7 +391,7 @@ class DegradationNoticeTest(unittest.TestCase):
 
     def test_a_track_whose_tags_cannot_be_read_is_reported_by_name(self) -> None:
         album = self.root / "An Artist" / "A Record"
-        (album / "01.mp3").write_bytes(b"ID3\x04\x00\x00\x7f\x7f\x7f\x7fgarbage")
+        (album / "01.mp3").write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x7fgarbage")
         stdout, stderr = self._run(["--no-artwork"], run=no_music, fetch=no_store)
         self.assertIn(
             "album_scan: could not read the tags of 01.mp3; counted as an unrated "

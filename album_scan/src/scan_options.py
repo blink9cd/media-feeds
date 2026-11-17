@@ -119,5 +119,8 @@ EPILOG = (
     "     --library)\n"
     "  2  a usage error, --library not a directory or not readable when a\n"
     "     folder scan actually runs, --output cannot be written, or no\n"
-    "     apple-music-toolbox for --source music or auto"
+    "     apple-music-toolbox for --source music or auto\n"
+    "  3  Music.app refused the Automation permission (error -1743 or\n"
+    "     -1744): a failure to report, not a quiet day; under auto the\n"
+    "     folder fallback still writes its record when it finds an album"
 )

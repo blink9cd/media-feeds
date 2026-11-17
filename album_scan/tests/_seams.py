@@ -15,7 +15,9 @@ names the same reason instead of restating it, and the skip every case driving t
 apple-music-toolbox shares: those exercise the toolbox's own parsing of a faked
 `osascript` reply, so they need the toolbox installed where `album_scan` would find it,
 which a standalone clone of this project need not have. `music_answering` is the fake
-`run` most of them pass.
+`run` most of them pass; `completed` and `DENIED_STDERR` build one `osascript` result,
+a refused automation permission among them, for the suites that need it with a toolbox
+and without one.
 
 Not discovered (no `test_` prefix). The suites import it from their own directory,
 which each puts on `sys.path` beside the tool folder.
@@ -68,6 +70,13 @@ needs_toolbox = unittest.skipUnless(
 )
 
 
+#: What osascript prints when the automation permission is denied, with an invented
+#: script offset: the error number is the part the cause reads.
+DENIED_STDERR = (
+    "0:42: execution error: Not authorized to send Apple events to Music. (-1743)\n"
+)
+
+
 def music_answering(
     newest: str, facts: str, *, facts_code: int = 0
 ) -> Callable[[list[str], float], subprocess.CompletedProcess[str]]:
@@ -88,6 +97,15 @@ def music_answering(
         )
 
     return run
+
+
+def completed(
+    returncode: int, stdout: str = "", stderr: str = ""
+) -> subprocess.CompletedProcess[str]:
+    """A fake `osascript` result, built without spawning a process."""
+    return subprocess.CompletedProcess(
+        args=["osascript"], returncode=returncode, stdout=stdout, stderr=stderr
+    )
 
 
 def no_music(_args: list[str], _timeout: float) -> subprocess.CompletedProcess[str]:

@@ -10,7 +10,9 @@ instead of in `main`'s loop.
 
 The seams stay `main`'s to own: the toolbox handle (whose `run` every Music.app query
 goes through) and `fetch` arrive as parameters and are never read from this module's
-globals, so a test drives any outcome here by passing a fake.
+globals, so a test drives any outcome here by passing a fake. Each Music.app lookup
+wraps that `run` in a `RecordingRunner` of its own, so an empty answer carries the
+cause the toolbox's own answer cannot (`src/music_causes.py`).
 
 `main` keeps everything that is not a lookup: the outcome lines, the per-album loop
 whose order matters (see `artwork_for`), and the record writing.
@@ -25,9 +27,11 @@ from apple_source import Toolbox, music_facts, music_refs
 from cover_art import AlbumRef, ArtworkMatch, Fetcher, artwork_url
 from folder_facts import DEFAULT_MIN_STARS, folder_facts
 from folder_scan import newest_albums
+from music_causes import RecordingRunner, facts_cause, newest_cause
 from notices import (
     print_fallback_notice,
     report_skipped_folder,
+    report_tag_over_cap,
     report_unreadable_tags,
 )
 from record_builder import AlbumFacts
@@ -50,10 +54,25 @@ class NewestAlbumResult(NamedTuple):
     per-album facts come from the same source. The loud notice for auto's fallback is
     printed by `resolve_albums` at the moment it falls back, so a fallback that then
     finds nothing, or finds no directory, is still announced.
+
+    `cause` says why Music.app answered nothing, when it was asked and did; None when
+    it answered, was never asked, or the cause is unknown (`newest_cause`).
     """
 
     refs: list[AlbumRef]
     resolved_source: str
+    cause: str | None = None
+
+
+class FactsLookup(NamedTuple):
+    """`facts_for`'s answer: the facts, and why Music.app gave none when it did not.
+
+    `cause` is set only for a Music.app lookup that answered None and recorded why
+    (`facts_cause`); the folder source's reasons are fixed, and `notices` names them.
+    """
+
+    facts: AlbumFacts | None
+    cause: str | None = None
 
 
 class FactsOptions(NamedTuple):
@@ -93,11 +112,26 @@ def resolve_albums(
     """
     if source == FOLDER:
         return NewestAlbumResult(_scan_folders(library, count), FOLDER)
-    music = music_refs(_required(toolbox, source), count)
+    music, cause = _music_newest(_required(toolbox, source), count)
     if music or source == MUSIC:
-        return NewestAlbumResult(music, MUSIC)
-    print_fallback_notice()
-    return NewestAlbumResult(_scan_folders(library, count), FOLDER)
+        return NewestAlbumResult(music, MUSIC, cause)
+    print_fallback_notice(cause)
+    return NewestAlbumResult(_scan_folders(library, count), FOLDER, cause)
+
+
+def _recording(toolbox: Toolbox) -> tuple[Toolbox, RecordingRunner]:
+    """`toolbox` with its `run` wrapped in a fresh recorder, and that recorder."""
+    recorder = RecordingRunner(toolbox.run)
+    return toolbox._replace(run=recorder), recorder
+
+
+def _music_newest(toolbox: Toolbox, count: int) -> tuple[list[AlbumRef], str | None]:
+    """Music.app's newest albums, and why there are none when there are none."""
+    recorded, recorder = _recording(toolbox)
+    refs = music_refs(recorded, count)
+    if refs:
+        return refs, None
+    return refs, newest_cause(recorder.last, lookback_days=toolbox.lookback_days)
 
 
 def _scan_folders(library: Path, count: int) -> list[AlbumRef]:
@@ -107,30 +141,35 @@ def _scan_folders(library: Path, count: int) -> list[AlbumRef]:
 
 def facts_for(
     ref: AlbumRef, resolved_source: str, options: FactsOptions
-) -> AlbumFacts | None:
-    """This album's facts, from the source that named it.
+) -> FactsLookup:
+    """This album's facts, from the source that named it, with Music.app's cause.
 
     The folder source reads the album folder's own tags: its tracks and year always,
     and its favorites unless `--no-favorites`. Music.app's counts and year are one
     query, so `--no-favorites` skips that query and all three with it. Neither lookup
     raises, so an unreadable folder or an unreachable Music.app degrades this refresh
-    to null facts rather than failing it.
+    to null facts rather than failing it; a Music.app lookup that did so says why.
     """
     if resolved_source == FOLDER:
         min_stars = options.min_stars
         if min_stars is None:
             min_stars = DEFAULT_MIN_STARS
-        return folder_facts(
-            options.library / ref.artist / ref.album,
-            min_stars=min_stars,
-            favorites=options.favorites,
-            on_unreadable=report_unreadable_tags,
+        return FactsLookup(
+            folder_facts(
+                options.library / ref.artist / ref.album,
+                min_stars=min_stars,
+                favorites=options.favorites,
+                on_unreadable=report_unreadable_tags,
+                on_over_cap=report_tag_over_cap,
+            )
         )
     if not options.favorites:
-        return None
-    return music_facts(
-        _required(options.toolbox, resolved_source), ref, min_stars=options.min_stars
-    )
+        return FactsLookup(None)
+    recorded, recorder = _recording(_required(options.toolbox, resolved_source))
+    facts = music_facts(recorded, ref, min_stars=options.min_stars)
+    if facts is not None:
+        return FactsLookup(facts)
+    return FactsLookup(None, facts_cause(recorder.last))
 
 
 def artwork_for(

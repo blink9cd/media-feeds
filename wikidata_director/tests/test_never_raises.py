@@ -37,13 +37,13 @@ import wikidata_director  # noqa: E402 - import follows the sys.path bootstrap a
 # of the local modules for constants), which under load outlasts even the limit
 # left without a deadline.
 settings.register_profile(
-    "fuzz_gate_deterministic",
+    "deterministic",
     derandomize=True,
     max_examples=200,
     deadline=None,
     suppress_health_check=[HealthCheck.too_slow],
 )
-settings.load_profile("fuzz_gate_deterministic")
+settings.load_profile("deterministic")
 
 # No URL can carry an unpaired surrogate: `urlencode` encodes to UTF-8, and UTF-8 has no
 # encoding for one. `json.dumps` below escapes it as `\udcff`, the same wire form a

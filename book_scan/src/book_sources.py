@@ -5,18 +5,21 @@ only importer, and re-exports what `tests/` needs as `book_scan.<name>`. The she
 (`goodreads_rss`) and the library export (`goodreads_csv`) each give a list of
 `Candidate`s, a record beside its Goodreads Book Id; this module merges two such
 lists, ranks them by read date, slices, fills missing covers and years, and reads the
-existing record for the never-go-backward guard. No network and no printing here: the
-page lookup is injected, and `book_scan.main` owns every message.
+existing record for the never-go-backward guard and for the cover and year a failed
+page lookup falls back to. No network and no printing here: the page lookup is
+injected, and `book_scan.main` owns every message.
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import json
+import re
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TypedDict
 
-from goodreads_cover import PageLookup, no_page
+from goodreads_cover import BookPage, PageLookup, no_page, usable_cover
 
 
 class BookRecord(TypedDict):
@@ -40,6 +43,17 @@ class BookRecord(TypedDict):
 #: id rides beside the record, never in it: it is no record field, but the cover
 #: lookup and the merge both key on it.
 Candidate = tuple[BookRecord, str]
+
+
+#: A book's identity in a written record, which holds no Book Id: title and author.
+BookKey = tuple[str, str]
+
+#: The only year a record is trusted to carry forward: four ASCII digits, the shape
+#: the page parser writes.
+_YEAR = re.compile(r"[0-9]{4}", re.ASCII)
+
+#: What a book with no entry in the existing record falls back to: nothing.
+_NOTHING_KEPT = BookPage(cover=None, year=None)
 
 
 def merge_candidates(
@@ -76,7 +90,9 @@ def pick_newest(candidates: list[Candidate], count: int) -> list[Candidate]:
 
 
 def fill_from_pages(
-    chosen: list[Candidate], lookup: PageLookup = no_page
+    chosen: list[Candidate],
+    lookup: PageLookup = no_page,
+    kept: Mapping[BookKey, BookPage] | None = None,
 ) -> list[BookRecord]:
     """The chosen records, each coverless one given what `lookup` finds by id.
 
@@ -84,15 +100,82 @@ def fill_from_pages(
     a year the source gave is kept. A record that already has a cover asks no page,
     year or not. Called after the slice, so a run asks at most `count` lookups however
     long the shelf or the library. The default asks nothing.
+
+    What the page did not give falls back to `kept`, the same book's cover and year
+    in the record a previous run wrote (`kept_pages`). The page is asked first, so a
+    changed cover still arrives; the fallback exists because the page is throttled,
+    and a lookup that fails for a day must not erase a cover the card already shows.
     """
+    kept = kept or {}
     for record, book_id in chosen:
         if record["cover"] is not None:
             continue
         page = lookup(book_id)
-        record["cover"] = page.cover
+        last = kept.get((record["title"], record["author"]), _NOTHING_KEPT)
+        record["cover"] = page.cover or last.cover
         if record["year"] is None:
-            record["year"] = page.year
+            record["year"] = page.year or last.year
     return [record for record, _ in chosen]
+
+
+def fill_chosen(
+    chosen: list[Candidate], lookup: PageLookup, output: Path
+) -> list[BookRecord]:
+    """`fill_from_pages`, falling back to the record about to be replaced at `output`.
+
+    What `main` calls: the existing record is read here, before the write, so a page
+    that gives nothing today (the page is throttled) costs the card nothing it had.
+    A run that asks no page (`lookup` is `no_page`) reads no record either: its output
+    stays a function of its input alone, which the samples depend on.
+    """
+    if lookup is no_page:
+        return fill_from_pages(chosen)
+    return fill_from_pages(chosen, lookup, kept_pages(output))
+
+
+def _kept_entries(output: Path) -> list[object]:
+    """The entries of the record file already at `output`; empty when it has none.
+
+    Empty for anything that is not a readable JSON list: an absent or damaged file
+    protects nothing and offers nothing, so it must not stop a write. RecursionError
+    is the decoder's answer to a file nested past the interpreter's limit.
+    """
+    try:
+        kept = json.loads(output.read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError):
+        return []
+    if not isinstance(kept, list):
+        return []
+    return kept
+
+
+def kept_pages(output: Path) -> dict[BookKey, BookPage]:
+    """Each book in the record at `output`, with the cover and year it holds.
+
+    The fallback `fill_from_pages` uses for a lookup that found nothing. The file is
+    read as data, not trusted as this tool's own output: a cover is kept only when it
+    passes `usable_cover`, the rule a fresh one must pass, and a year only as four
+    digits. An entry without a string title and author names no book and is skipped;
+    a book listed twice keeps its first entry.
+    """
+    pages: dict[BookKey, BookPage] = {}
+    for entry in _kept_entries(output):
+        if not isinstance(entry, dict):
+            continue
+        title, author = entry.get("title"), entry.get("author")
+        if not isinstance(title, str) or not isinstance(author, str):
+            continue
+        pages.setdefault((title, author), _kept_page(entry))
+    return pages
+
+
+def _kept_page(entry: dict[str, object]) -> BookPage:
+    """The usable cover and the four-digit year `entry` holds, each None otherwise."""
+    cover, year = entry.get("cover"), entry.get("year")
+    return BookPage(
+        cover=usable_cover(cover) if isinstance(cover, str) else None,
+        year=year if isinstance(year, str) and _YEAR.fullmatch(year) else None,
+    )
 
 
 def newest_kept_read(output: Path) -> str | None:
@@ -102,12 +185,7 @@ def newest_kept_read(output: Path) -> str | None:
     with an ISO-date `read`: an absent or damaged file gives the guard nothing to
     protect, so it must not stop a write.
     """
-    try:
-        kept = json.loads(output.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if not isinstance(kept, list):
-        return None
+    kept = _kept_entries(output)
     dates = [read for entry in kept if (read := _iso_read(entry)) is not None]
     if not dates:
         return None

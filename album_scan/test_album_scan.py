@@ -86,9 +86,12 @@ _MIN_TESTS_BY_FILE: dict[str, int] = {
     "test_live_favorites.py": 1,
     # The reachability probe both live files gate their skip with, classified
     # against a faked run: a clean exit reachable; a non-zero exit, an OSError, and a
-    # timeout each unreachable. Process-free, so it runs regardless of
+    # timeout each unreachable. Plus the timeout recorder both live files run their
+    # album lookup through: a timeout recorded and re-raised, a timed-out scan
+    # answering [] with the timeout recorded, a clean empty answer recording none, and
+    # the skip-or-fail decision on each record. Process-free, so it runs regardless of
     # ALBUM_SCAN_OFFLINE.
-    "test_music_probe.py": 4,
+    "test_music_probe.py": 9,
     # --count's CLI surface on the folder path: a below-one and a non-integer value
     # each refused as a usage error with nothing written, the record file staying a
     # JSON array at the default count, an explicit count selecting that many albums
@@ -121,6 +124,26 @@ _MIN_TESTS_BY_FILE: dict[str, int] = {
     # artist folder reported by name only, with the scan going on to the album behind
     # it.
     "test_narration.py": 12,
+    # The recorder every Music.app lookup runs through: nothing before a call, a
+    # result passed through as the same object, each absorbed failure re-raised as
+    # the same exception, an unabsorbed one left unrecorded, and the last call read.
+    # Then each cause read off a record, for the newest-albums lookup (none recorded,
+    # a timeout's bound, osascript unable to run, a nonzero exit's stderr line echoed,
+    # escaped and capped after escaping, an exit with no stderr, -1743 and -1744 as a
+    # denied permission, an empty window with and without its width, an answer with no
+    # usable row) and for the
+    # facts lookup (none recorded, the shared failures, an empty answer, an answer
+    # with no usable counts). Last, `is_permission_denied`: a -1743 cause and a -1744
+    # one recognized, every other cause and None not.
+    "test_music_causes.py": 24,
+    # Those causes end to end through main: --source music's no-album line for each
+    # cause (a -1743 or -1744 denial exiting 3), and its generic line when nothing was
+    # recorded; --source auto's notice naming each cause with its caveat kept, listing
+    # a timeout when the cause is unknown, a denial writing the folder's record yet
+    # exiting 3, and an empty folder after a fallback exiting 1 (3 after a denial);
+    # and the counts line naming each facts cause under both Music.app sources, or
+    # the generic one.
+    "test_music_cause_messages.py": 15,
     # --artwork-px's floor: a zero or negative edge length refused at parse time with
     # nothing written and neither seam reached, and an edge length of one accepted.
     "test_artwork_px.py": 2,
@@ -146,18 +169,54 @@ _MIN_TESTS_BY_FILE: dict[str, int] = {
     # and the folder source never looking. Plus the toolbox's age: a star threshold
     # refused by a toolbox whose album_facts takes no min_stars (and exit 2 from main
     # naming the fix), accepted by one that does, and not asked for with no threshold
-    # or with favorites declined.
-    "test_toolbox_lookup.py": 19,
+    # or with favorites declined. And the lookback window read only from a positive,
+    # non-bool integer.
+    "test_toolbox_lookup.py": 20,
     # The Music.app arms a standalone clone, which has no toolbox to drive, must still
     # run, through a stand-in toolbox written to a temporary folder: Music.app
     # reporting no album (exit 1, the library unnamed), Music.app's year and track
     # count admitting a store result by another name and, as the control, refused
     # when they disagree, and one toolbox imported twice appending each folder once.
-    "test_fake_toolbox.py": 4,
+    # And a refused automation permission recorded through the stand-in: exit 3 under
+    # --source music naming the denial, exit 3 under auto with the folder's record
+    # written and the fallback notice naming it, and exit 3 under auto over an empty
+    # library.
+    "test_fake_toolbox.py": 7,
     # The ID3 tag reader's property test: arbitrary bytes behind a well-formed
     # header give a POPM-byte rating or the documented MutagenError, and the wrapper
     # folder_facts calls never raises.
     "test_tag_fuzz.py": 1,
+    # The shim bounding a compressed ID3 frame's inflate: the counted inflate under,
+    # past, and on a malformed stream; one stream through the shim under, at, one past
+    # the cap, malformed, cut short, never inflating a refused stream whole, rechecked
+    # after the inflate for output the count missed, and its two properties; the
+    # per-read budget charging every stream, charging a failed one, refusing once spent
+    # without counting, at exactly the budget too, and starting fresh on begin_read;
+    # the shim in mutagen's frame module, counting a refusal, passing zlib's other
+    # names through, and its refusal passing through mutagen.
+    "test_folder_facts_inflate.py": 21,
+    # The reader meeting compressed frames: a bomb from a tiny file as a MutagenError,
+    # refused within a chunk past the cap, reported and counted unrated, refused even
+    # if swallowed, and a small compressed rating and year still decoding; and a tag of
+    # under-cap frames past the budget refused, junk frames charged, frames failing
+    # mid-count charged, such a track reported and counted unrated, and each track
+    # starting a fresh budget.
+    "test_folder_facts_inflate_reader.py": 10,
+    # The capped file view mutagen reads a tag through: a sized read within, at, and
+    # one past the cap, refused before reading and of neither error type mutagen
+    # converts or catches; a read past the end asking the file only for what it
+    # holds, and at the end for nothing; reading to the end within and past the cap;
+    # seek, tell and name passed through; and its property.
+    "test_capped_read.py": 11,
+    # The reader meeting a tag that declares more than its file holds: a huge tag size
+    # and a huge v2.3 extended header each refused as over the cap, the declared size
+    # never asked of the file, a claim under the cap read only as far as the file
+    # holds, reported by cause and counted unrated, the generic reporter hearing it
+    # when no other is given; the cap's exact boundary, a tag with a cover of several
+    # MiB still read; a swallowed and a wrapped refusal, and a ValueError after one,
+    # still refusing; an extended header claiming more than its tag unreadable, never
+    # a crash; and the notice naming the cap, for the read and for the inflate.
+    "test_folder_facts_read_cap.py": 15,
     # favorite_signal: the boundary conversion's three outcomes and the toolbox's
     # refs becoming ours, --favorite-min-stars' range, and the written record's
     # signal for the folder default, a folder threshold, no POPM, Music.app's flag

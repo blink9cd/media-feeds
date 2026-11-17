@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import bounded_fetch  # noqa: E402 - import follows the sys.path bootstrap above
+import bounded_fetch
 
 
 class TestHttpsUrlOrNone(unittest.TestCase):
@@ -53,13 +53,48 @@ class TestHttpsUrlOrNone(unittest.TestCase):
             ("userinfo", "https://user:pass@host/x"),
             ("header break", "https://host/x\r\nHost: internal"),
             ("tab inside the scheme", "ht\ttps://host/x"),
-            ("zero-width space", "https://host/​x"),
-            ("bidi override", "https://host/‮x"),
+            ("zero-width space", "https://host/\u200bx"),
+            ("bidi override", "https://host/\u202ex"),
             ("a space", "https://host/ x"),
             ("a NUL", "https://host/x\x00"),
         ):
             with self.subTest(label):
                 self.assertIsNone(bounded_fetch.https_url_or_none(url))
+
+    def test_a_backslash_in_the_host_is_none(self) -> None:
+        # `urlsplit` reads `\` as an ordinary host character, so the first URL's
+        # hostname ends in `.wikipedia.org`; a browser's WHATWG parser reads `\` as
+        # `/` in an https URL and goes to `evil.example`. A caller that admits a URL
+        # by its host suffix and hands it to a page would link to a host its check
+        # never saw, so a backslash anywhere in the netloc is refused.
+        for label, url in (
+            ("before a trusted suffix", "https://evil.example\\.wikipedia.org/x"),
+            ("after the port", "https://evil.example:443\\.wikipedia.org/x"),
+            ("at the host's start", "https://\\evil.example/x"),
+        ):
+            with self.subTest(label):
+                self.assertIsNone(bounded_fetch.https_url_or_none(url))
+
+    def test_a_backslash_in_the_path_still_passes(self) -> None:
+        # Past the netloc a backslash moves no host: the rule is about where the
+        # request goes, so the path keeps whatever text it carries.
+        url = "https://host.example/a\\b"
+        self.assertEqual(bounded_fetch.https_url_or_none(url), url)
+
+    def test_other_unusual_host_characters_are_accepted_today(self) -> None:
+        # Pinned, not endorsed: the rule refuses a backslash rather than imposing a
+        # DNS-name pattern. None of these can end the host early in a browser: the
+        # URL Standard's host parser refuses `^` and `|` in a domain, and any `%`
+        # left in a domain after percent-decoding, so such a link is dead (read from
+        # the standard, not tested in a browser). A change here is a decision, so it
+        # fails a test.
+        for url in (
+            "https://ev%il.example/x",
+            "https://ev^il.example/x",
+            "https://ev|il.example/x",
+        ):
+            with self.subTest(url=url):
+                self.assertEqual(bounded_fetch.https_url_or_none(url), url)
 
     def test_a_percent_encoded_path_still_passes(self) -> None:
         # The scan reads the characters actually in the string, so an ESCAPED space

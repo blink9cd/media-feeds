@@ -2,6 +2,74 @@
 
 Notable changes to this project, newest first.
 
+## 0.3.0 - 2026-11-17
+
+### Added
+
+- `album_scan` says why Music.app answered nothing. The apple-music-toolbox reports a
+  timeout, a failed `osascript`, and an empty lookback window alike as no answer, so
+  `album_scan` records what each Music.app query did and names the cause in its
+  `no album:` line, in the `--source auto` fallback notice, and in the `counts
+  unavailable` line: `Music.app timed out after <n>s`, `osascript could not be run`,
+  `automation permission denied (...)`, `the Music.app query failed (...)`, `Music.app
+  has nothing added within the last <n> days`, and others. A quoted `osascript` error
+  line is escaped and then cut to a fixed length. The toolbox is handed exactly what it
+  was handed before. See "Why Music.app answered nothing" in `album_scan.md`.
+- `album_scan` exits `3` when macOS refuses Music.app's Automation permission (osascript
+  error `-1743`, or `-1744` for a consent an unattended run cannot ask for). Under
+  `--source music` nothing is written. Under `--source auto` the folder fallback still
+  runs and writes its record when it finds an album, but the run still exits `3`, so a
+  lost permission is never reported as a success or as a day with nothing new.
+- `book_scan` keeps what the record already holds when a page lookup comes back empty.
+  Before writing, it reads the record at `--output` and matches each book by title and
+  author; a cover or year the page did not give this run falls back to the recorded one
+  when that still passes the cover rule. Before, a day the page was not served wrote
+  `cover: None` over a good cover. A run that asks no page (`--feed-file`,
+  `--no-cover-lookup`) reads no record.
+
+### Changed
+
+- `cover_art`'s album matcher keeps the letters, digits, and combining marks of every
+  script, so a Cyrillic, CJK, Greek, Arabic, Hebrew, or Devanagari title matches on its
+  own letters; before, only ASCII was kept, and every such title reduced to nothing and
+  matched every other. It also deletes variation selectors, so "I ❤️ NY" and "I ❤ NY"
+  are one name, and applies NFKC again after casefolding, so a name always normalizes to
+  itself.
+- A title with no letter, digit, or mark (such as `+`, `×`, or `!!!`) is compared by its
+  own text, as is each such trailing qualifier group, so an artist whose albums are each
+  one symbol no longer gets the wrong album's cover. A blank album name, on either side,
+  matches nothing.
+- `wikidata_director` sends its User-Agent only to the origin it asked: a redirect to
+  another host, scheme, or port goes without it.
+- The cover art tests are split into smaller suites, and every offline test module
+  carries a tripwire that fails it when a test reaches for any host but loopback. A new
+  parity test holds `cover_art`'s copies of the URL rule, the body read, and the redirect
+  handler to `bounded_fetch` case by case.
+- `bounded_run.md` records that the Windows job-object path now passes on a Windows
+  runner at 100% branch coverage.
+- Tests and comments only otherwise: the property tests load a Hypothesis profile
+  renamed `deterministic`, invisible characters in tests are written as escapes, and
+  comments and docstrings gain serial commas.
+
+### Fixed
+
+- `album_scan`'s folder source bounds what one track's ID3 tag can cost. A tag's read is
+  capped at 16 MiB, and a compressed frame inflates within 1 MiB and a whole tag's
+  compressed frames within 4 MiB, so a small hostile file can no longer make the scan
+  allocate or inflate without limit. A tag refused for its size counts the track as
+  unrated, with the line `could not read the tags of <file> (the tag is over the size
+  cap)`, and an extended header that claims more than its tag is read as an unreadable
+  tag rather than ending the refresh.
+- `cover_art`, `feed_read`, and the bundled `bounded_fetch` refuse a URL with a backslash
+  anywhere in its host part. Python's `urlsplit` reads `\` as a host character while a
+  browser reads it as `/`, so such a URL could pass a host check and then load from
+  another host. `cover_art`'s redirect handler refuses such a hop too.
+- `cover_art`'s capped body read refuses a chunk only once it lands strictly past the
+  deadline, as `bounded_fetch` does; a chunk landing exactly at it is kept.
+- `cover_art`'s album matcher refuses an over-long album or artist name on its length
+  alone, before any of it is Unicode-normalized, so a store reply packed with characters
+  that NFKC expands can no longer cost seconds of CPU per album.
+
 ## 0.2.2 - 2026-11-10
 
 ### Changed

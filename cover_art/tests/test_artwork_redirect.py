@@ -23,10 +23,15 @@ from pathlib import Path
 from unittest import mock
 
 _TOOL_ROOT = Path(__file__).resolve().parent.parent
-sys.path[:0] = [str(_TOOL_ROOT / "src"), str(_TOOL_ROOT)]
+sys.path[:0] = [
+    str(_TOOL_ROOT / "src"),
+    str(_TOOL_ROOT),
+    str(Path(__file__).resolve().parent),
+]
 
 import cover_art  # noqa: E402 - import follows the sys.path bootstrap above
 from artwork_redirect import HttpsOnlyRedirect  # noqa: E402 - the same bootstrap
+from _offline_guard import setUpModule, tearDownModule  # noqa: E402, F401 - the bootstrap above; unittest calls the hooks by name
 
 _REF = cover_art.AlbumRef(
     artist="An Artist", album="A Record", added=dt.date(2026, 8, 30)

@@ -305,6 +305,17 @@ answered 200 with one `og:image`.
   and the run's exit code does not change. A missing cover costs the card its picture,
   never the run. The page is never fetched with anything but the project's honest
   User-Agent, and a block is never worked around.
+- **A lookup that finds nothing keeps what the record already holds.** Before writing,
+  the run reads the record at `--output` and matches each book by title and author (a
+  record holds no Book Id). A cover or year the page did not give today falls back to
+  the one recorded for that book, when it still passes `usable_cover` (a year: four
+  digits). The page is asked first, so a replaced cover still arrives; a cover the
+  page stops naming is not told apart from a failed fetch, so the recorded one stays.
+  Without this, a day the page was not served wrote `cover: None` over a good cover,
+  and a published card lost and regained its picture from one day to the next. A book
+  whose title or author changed at the source matches nothing and starts over. A run
+  that asks no page (`--feed-file`, `--no-cover-lookup`) reads no record either, so
+  its output depends on its input alone.
 - **Expect throttling.** Measured 2026-10-28: after about ten requests in a few
   minutes, the page answered 200 with an empty body, which the lookup reads as no cover.
   A daily run asks at most `--count` pages, far below that, and the live test skips

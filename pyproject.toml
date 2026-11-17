@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "media-feeds"
-version = "0.2.2"
+version = "0.3.0"
 description = "Feed adapters: public media RSS and a local music library in, the committed JSON records a site renders out"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
@@ -76,8 +76,9 @@ mypy_path = [
   "$MYPY_CONFIG_FILE_DIR/cover_art",
   "$MYPY_CONFIG_FILE_DIR/cover_art/src",
   "$MYPY_CONFIG_FILE_DIR/library_walk",
-  # cover_art's cold-cache test runs its child through bounded_run, and bounded_run.py
+  # stdio_utf8's suites run their children through bounded_run, and bounded_run.py
   # puts its private src/ on sys.path at load time, which mypy cannot see either.
+  # live_pid_guard is the cleanup bounded_run's live grandchild-fixture tests import.
   "$MYPY_CONFIG_FILE_DIR/bounded_run",
   "$MYPY_CONFIG_FILE_DIR/bounded_run/src",
   "$MYPY_CONFIG_FILE_DIR/live_pid_guard",
@@ -104,5 +105,9 @@ env = [
   "FILM_SCAN_OFFLINE",
   "FILM_SCAN_TMDB_TOKEN",
   "FILM_SCAN_USERNAME",
+  # Read by cover_art's offline-guard test, which proves the guard clears both cases
+  # of the proxy name urllib honors and restores them after.
+  "HTTP_PROXY",
   "WIKIDATA_DIRECTOR_OFFLINE",
+  "https_proxy",
 ]

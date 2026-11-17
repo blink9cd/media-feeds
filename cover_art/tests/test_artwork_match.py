@@ -35,6 +35,7 @@ _TOOL_ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [
     str(_TOOL_ROOT / "src"),
     str(_TOOL_ROOT),
+    str(Path(__file__).resolve().parent),
 ]
 
 from cover_art import artwork_url  # noqa: E402 - import follows the sys.path bootstrap above
@@ -45,6 +46,7 @@ from artwork_match import (  # noqa: E402 - import follows the sys.path bootstra
     normalize,
     pick_album,
 )
+from _offline_guard import setUpModule, tearDownModule  # noqa: E402, F401 - the bootstrap above; unittest calls the hooks by name
 
 #: A stack of trailing qualifiers long enough to push any name past the cap on its
 #: own. Each one strips cleanly, so a name wearing it still reduces to its base,

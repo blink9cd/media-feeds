@@ -138,16 +138,19 @@ class ToolboxModules(NamedTuple):
 
 
 class Toolbox(NamedTuple):
-    """The two toolbox calls, the runner, and the toolbox folder's final component.
+    """The two toolbox calls, the runner, the toolbox folder's name, and its window.
 
-    The runner is what every query goes through; the folder name is printed on every
-    success line, so a wrong pick shows.
+    The runner is what every query goes through; the folder's final component is
+    printed on every success line, so a wrong pick shows.
     """
 
     newest_albums: NewestCall
     album_facts: FactsCall
     run: Runner
     folder: str
+    #: How many days back Music.app is asked for recent additions, named when that
+    #: window turns out empty; None when the toolbox does not say.
+    lookback_days: int | None = None
 
 
 def is_toolbox(folder: Path) -> bool:
@@ -314,7 +317,21 @@ def open_toolbox(
         album_facts=modules.album_stats.album_facts,
         run=run,
         folder=root.name,
+        lookback_days=lookback_days_of(modules.recently_added),
     )
+
+
+def lookback_days_of(recently_added: ModuleType) -> int | None:
+    """The toolbox's lookback window in days, or None when it names no usable one.
+
+    Read from the module's `_MUSIC_LOOKBACK_DAYS`, which only names the window in a
+    message: a toolbox without it, or with something other than a positive integer
+    there, loses the number from that message and nothing else.
+    """
+    days = getattr(recently_added, "_MUSIC_LOOKBACK_DAYS", None)
+    if isinstance(days, bool) or not isinstance(days, int) or days <= 0:
+        return None
+    return days
 
 
 def music_refs(toolbox: Toolbox, count: int) -> list[AlbumRef]:

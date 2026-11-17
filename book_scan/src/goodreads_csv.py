@@ -42,7 +42,7 @@ REQUIRED_EXPORT_COLUMNS = (
 #: The suffix an export file carries, compared case-blind.
 EXPORT_SUFFIX = ".csv"
 
-_BOM = "﻿"
+_BOM = "\ufeff"
 
 #: A whole-star rating 1-5, written bare or with a zero fraction (`4`, `4.0`): the
 #: export uses both forms in one file. ASCII only, so no other script's digit passes.

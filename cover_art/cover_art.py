@@ -305,11 +305,15 @@ def _search_pool(
 def _is_recordable_url(url: str) -> bool:
     """Whether a cover URL may be recorded for a page to use as an image source.
 
-    Admitted: an `https` URL with a non-empty host and no userinfo. Refused: every
-    other scheme, a scheme-relative `//host`, an empty host, a `user:password@`
-    prefix, and any string carrying whitespace or a Unicode control or format
-    character. There is deliberately no allowlist of vendor hosts: the rule is about
-    what a page can safely be handed, not about which CDN is currently in use.
+    Admitted: an `https` URL with a non-empty host, no userinfo, and no backslash in
+    its netloc. Refused: every other scheme, a scheme-relative `//host`, an empty
+    host, a `user:password@` prefix, a backslash anywhere in the netloc, and any
+    string carrying whitespace or a Unicode `C*` character (control, format,
+    surrogate, private use, unassigned). The backslash is refused because `urlsplit`
+    reads it as a host character while a browser reads it as `/`, so the page would
+    load from a host this rule never saw. There is deliberately no allowlist of vendor
+    hosts: the rule is about what a page can safely be handed, not about which CDN is
+    currently in use.
 
     The character scan runs on the raw string and comes before the parse, because the
     parser is not a filter: `urlsplit` silently strips tab, carriage return, and line
@@ -331,6 +335,8 @@ def _is_recordable_url(url: str) -> bool:
         and bool(parts.hostname)
         and parts.username is None
         and parts.password is None
+        # Where a browser and urlsplit disagree on the host (see the docstring).
+        and "\\" not in parts.netloc
     )
 
 
@@ -363,7 +369,7 @@ def _read_body(
     is ended only by the socket's own timer.
 
     Raises `ValueError` once more than `limit` bytes have arrived (the body is not a
-    search reply), and `TimeoutError` once a chunk lands `deadline` seconds or more
+    search reply), and `TimeoutError` once a chunk lands more than `deadline` seconds
     after the read began. Both are already in the family `_fetch_results` swallows
     (`TimeoutError` is an `OSError`), so an oversized or dripping reply is the same
     "no cover" outcome as any other failed fetch. `clock` is injectable so the
@@ -378,7 +384,7 @@ def _read_body(
         received += len(chunk)
         if received > limit:
             raise ValueError(f"response body exceeds {limit} bytes")
-        if clock() - started >= deadline:
+        if clock() - started > deadline:
             raise TimeoutError(f"response body still arriving after {deadline} seconds")
         chunks.append(chunk)
     return b"".join(chunks)

@@ -39,11 +39,13 @@ import argparse
 import http.client
 import json
 import sys
+import types
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import Final
 
 # Put the vendored libraries (stdio_utf8, help_formatter, bounded_fetch) and the
 # sibling feed_read tool folder on sys.path from this repository's root, the folder
@@ -99,6 +101,11 @@ LOOKUP_TIMEOUT_SECONDS = 15.0
 #: rejection by impersonating a browser. It names no person, host, or account, so it
 #: puts no personal data in the repository.
 _USER_AGENT = "media-feeds-wikidata-director/1.0"
+
+#: Every header a request carries, held once so the request and the opener's
+#: same-origin re-attach can never disagree. Read-only, so no caller can add a header
+#: that would then ride every same-origin hop.
+_HEADERS: Final[Mapping[str, str]] = types.MappingProxyType({"User-Agent": _USER_AGENT})
 
 #: Exit codes. `main` returns these; they are the tool's contract with a caller.
 EXIT_OK = 0
@@ -178,11 +185,18 @@ def labels_url(qids: Sequence[str]) -> str:
 def _build_request(url: str) -> urllib.request.Request:
     """A GET request for `url`, carrying the User-Agent Wikimedia requires.
 
+    Built by `bounded_fetch.build_request`, which attaches `_HEADERS` as unredirected
+    headers: urllib's redirect handler never copies those to the next hop, and
+    `_real_fetch`'s opener re-attaches them only within the same origin. So the agent,
+    and any contact address Wikimedia's policy asks it to carry, never reaches a host
+    a redirect names. Raises `ValueError` for a URL that is not https, which every URL
+    this module builds is; `_api_object` turns that into `{}` regardless.
+
     Separating request construction from sending it (`_real_fetch`) makes the header
     provable with no network, so a dropped or reverted User-Agent is caught at test
     time instead of surfacing as a live rejection that reads like a network fault.
     """
-    return urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    return bounded_fetch.build_request(url, _HEADERS)
 
 
 def _real_fetch(url: str, timeout: float) -> bytes:
@@ -193,12 +207,13 @@ def _real_fetch(url: str, timeout: float) -> bytes:
     handlers scripted, and `tests/test_live_wikidata.py` exercises it end to end. The
     opener is `bounded_fetch`'s, which follows a redirect only to https: a hop onto
     plain http raises `ValueError` before it is followed, so a downgraded reply is
-    never parsed as Wikidata's. The body is read through `feed_read.read_body`, which
-    caps its size and ends a read still arriving past its deadline. Every one of those
-    refusals is an exception `_api_object` already turns into `{}`, so the
-    never-raises contract holds through them.
+    never parsed as Wikidata's. It is handed `_HEADERS` so a same-origin hop gets the
+    User-Agent back, while a cross-origin hop goes without it. The body is read
+    through `feed_read.read_body`, which caps its size and ends a read still arriving
+    past its deadline. Every one of those refusals is an exception `_api_object`
+    already turns into `{}`, so the never-raises contract holds through them.
     """
-    opener = bounded_fetch.build_opener({})
+    opener = bounded_fetch.build_opener(_HEADERS)
     with opener.open(_build_request(url), timeout=timeout) as response:
         return feed_read.read_body(response)
 

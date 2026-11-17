@@ -58,7 +58,9 @@ from book_select import (  # noqa: E402,F401 - follows the insert above; re-expo
 from book_sources import (  # noqa: E402,F401 - follows the insert above; re-exports
     BookRecord,
     Candidate,
+    fill_chosen,
     fill_from_pages,
+    kept_pages,
     merge_candidates,
     newest_kept_read,
     pick_newest,
@@ -461,14 +463,12 @@ def main(
     # Before the page lookups, so a kept record costs no page fetch.
     if source == "both" and _kept_is_newer(Path(args.output), chosen):
         return _EXIT_OK
-    records = fill_from_pages(chosen, _page_lookup(args, cover_fetch))
+    records = fill_chosen(chosen, _page_lookup(args, cover_fetch), Path(args.output))
 
-    # Re-point every cover here, not in the parsers or the page lookup, which keep
-    # returning the vendor's URL verbatim once it passes the cover rule: the size stays the caller's choice
-    # rather than a constant buried in the parser. Guarded per record: a book with
-    # no large-image variant, or one the rule refused, degrades to cover: None, and
-    # resizing None would raise inside `cover_at_width`'s regex substitution rather
-    # than staying None.
+    # Re-point every cover here, not in the parsers or the page lookup, which return
+    # the vendor's URL verbatim once it passes the cover rule: the size stays the
+    # caller's choice, not a constant buried in a parser. Guarded per record: a book
+    # left with cover: None would raise inside `cover_at_width`'s regex substitution.
     for record in records:
         if record["cover"] is not None:
             record["cover"] = cover_at_width(record["cover"], args.cover_width)

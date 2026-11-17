@@ -80,20 +80,25 @@ _REDIRECTS = range(300, 400)
 
 # fuzz-target
 def https_url_or_none(url: str) -> str | None:
-    """`url` when it is an https URL with a host, else None.
+    r"""`url` when it is an https URL with a host, else None.
 
     The one rule for a URL a record may carry or a request may be built from. A
     caller applies it wherever it decides a URL (so a rejected one becomes "no URL"
     in its own terms), and `build_request` applies it again at the sink, so none can
     reach the opener by any route.
 
-    Admitted: an https URL with a non-empty host, no userinfo, and no whitespace or
-    Unicode control or format character. Refused: every other scheme, a
-    scheme-relative `//host/x`, an empty host, a `user:password@` prefix, and a
-    string `urlsplit` itself refuses (an unclosed IPv6 bracket), which comes back as
-    "no URL" rather than as a `ValueError` out of a parser. There is deliberately NO
-    allowlist of hosts: the rule is about what a page can safely be handed and what
-    this module may open, not about which CDN a vendor is using this year.
+    Admitted: an https URL with a non-empty host, no userinfo, no backslash in its
+    netloc, and no whitespace or Unicode `C*` character (control, format, surrogate,
+    private use, unassigned). Refused: every other scheme, a scheme-relative
+    `//host/x`, an empty host, a `user:password@` prefix, a `\` anywhere in the
+    netloc, and a string `urlsplit` itself refuses (an unclosed IPv6 bracket), which
+    comes back as "no URL" rather than as a `ValueError` out of a parser. The
+    backslash is refused because `urlsplit` reads it as a host character while a
+    browser reads it as `/`: `https://evil.example\.wikipedia.org/x` has a hostname
+    ending in `.wikipedia.org` here and goes to `evil.example` in a page. There is
+    deliberately NO allowlist of hosts: the rule is about what a page can safely be
+    handed and what this module may open, not about which CDN a vendor is using this
+    year.
 
     The character scan runs on the RAW string and comes BEFORE the parse, because
     parsing is not filtering: `urlsplit` silently strips tab, carriage return and
@@ -129,6 +134,8 @@ def https_url_or_none(url: str) -> str | None:
         and parts.hostname
         and parts.username is None
         and parts.password is None
+        # Where a browser and urlsplit disagree on the host (see the docstring).
+        and "\\" not in parts.netloc
     ):
         return url
     return None

@@ -117,7 +117,7 @@ class RecordWriteTest(unittest.TestCase):
             read=None,
             cover=None,
         )
-        with patch.object(book_scan, "fill_from_pages", return_value=[undated]):
+        with patch.object(book_scan, "fill_chosen", return_value=[undated]):
             code, stdout, _stderr = self._run(self.root / "books.json")
         self.assertEqual(code, 0)
         self.assertEqual(stdout, "book_scan: wrote 1 book(s), newest An Undated Book\n")

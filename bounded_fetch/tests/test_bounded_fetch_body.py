@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import bounded_fetch  # noqa: E402 - import follows the sys.path bootstrap above
+import bounded_fetch
 
 
 class TestReadBody(unittest.TestCase):

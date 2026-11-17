@@ -13,6 +13,10 @@ automation-denied all come back as a plain `None`, indistinguishable from "reach
 but that album is not in the library". Skipping on `None` would defeat the whole point
 of this file.
 
+Its own album lookup runs through `_music_probe.py`'s `TimeoutRecordingRunner`, as
+`test_live_music.py`'s does, so a lookup that timed out under load skips with a message
+naming the timeout instead of reading as a library with no recent album.
+
 The album under test is not hardcoded. It is whichever album Music.app itself reports
 as most recently added, which is by construction an album that exists in this library,
 so a `None` from `album_facts` after that lookup succeeded means the counts contract
@@ -33,8 +37,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _music_probe import (  # noqa: E402 - import follows the sys.path bootstrap above
     SCANNING_TIMEOUT_SECONDS,
+    TimeoutRecordingRunner,
     live_toolbox,
     music_is_reachable,
+    timeout_skip_reason,
 )
 
 OFFLINE = os.environ.get("ALBUM_SCAN_OFFLINE") == "1"
@@ -60,13 +66,19 @@ class LiveFavoritedCountsTest(unittest.TestCase):
             self.skipTest("Music.app is not reachable on this host")
 
     def test_the_newest_album_resolves_to_real_counts(self) -> None:
+        recorder = TimeoutRecordingRunner(self.toolbox.recently_added._real_run)
         # Resolved here rather than in setUp so the narrowing below is a plain local:
         # an attribute keeps its declared list across the method boundary no matter
         # what setUp proved about it.
         refs = self.toolbox.recently_added.newest_albums_from_music(
-            1, timeout=SCANNING_TIMEOUT_SECONDS
+            1, run=recorder, timeout=SCANNING_TIMEOUT_SECONDS
         )
         if not refs:
+            # A timed-out scan answers [] as well, so name it when it is the reason,
+            # rather than letting load pass as an empty library.
+            reason = timeout_skip_reason(recorder.timeouts)
+            if reason is not None:
+                self.skipTest(reason)
             self.skipTest(
                 "Music.app is reachable but names no recently added album: an "
                 "empty result, which test_live_music.py is the file that judges"

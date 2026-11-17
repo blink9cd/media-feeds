@@ -60,6 +60,12 @@ An honest product identifier is enough. Do not "fix" a future rejection by
 impersonating a browser, and note that the string names no person, host, or account, so
 it puts no personal data in the repository.
 
+The header rides a redirect only within the origin it was sent to. The request is built
+by `bounded_fetch.build_request`, which attaches it as an unredirected header that
+urllib never copies to the next hop, and the opener re-attaches it only when the hop
+keeps the scheme, host, and port. So a contact address added to the agent, as
+Wikimedia's policy asks, never reaches a host a redirect names.
+
 ## A missing director is a normal outcome
 
 `directors_for` never raises. No Wikidata item for the id, no `P57` statement on the
@@ -110,10 +116,13 @@ one window. A default refresh (one film, three requests) is nowhere near it. A b
 of back-to-back lookups is, so anything that resolves many films should space them and
 honor `Retry-After`.
 
-This is also why the live-boundary test probes availability twice: one lookup is
-three requests, so the limit can arrive between them, long after the first probe passed.
-Re-establishing the precondition before calling a `None` a broken contract is what keeps
-a rate limit from being reported as "the contract moved".
+This is also why the live-boundary test runs its lookup through a fetch that records the
+failure it met: one lookup is three requests, so a limit or a `5xx` can arrive between
+them, long after the opening probe passed. A rate limit, any `5xx`, or a transport
+failure on any of the three is an outage and skips; only a lookup whose requests all
+answered well-formed, or met another `4xx`, is reported as "the contract moved". An
+earlier design re-probed the search URL instead, and a short outage that had cleared by
+then was reported as a moved contract.
 
 ## Exit codes
 

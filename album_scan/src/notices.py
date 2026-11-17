@@ -3,8 +3,10 @@
 Four things an operator needs to hear about that are not the outcome itself: that
 `--source auto` fell back to the folder scan, that a fact the record was asked for
 came back null, that the scan passed over a folder it could not read, and that a
-track's tags could not be read. Each is
-one line, on stderr, and none changes the exit code, stdout, or the record. The
+track's tags could not be read, with the cause named when it was the size cap. The
+first two name why Music.app answered nothing when its recorded query says
+(`src/music_causes.py`). Each is one line, on stderr, and none changes the exit code,
+stdout, or the record. The
 outcome lines themselves (the confirmation, "no album found", an unusable path)
 stay in `main`, beside the return that each one explains.
 
@@ -76,27 +78,35 @@ def terminal_safe_text(value: str) -> str:
     )
 
 
-def print_fallback_notice() -> None:
+#: Every reason Music.app can answer nothing, for a fallback whose cause is unknown.
+_FALLBACK_CAUSES_UNKNOWN = (
+    "Music.app is absent, not running or not scriptable, timed out, was denied "
+    "automation permission, or has nothing added within its lookback window"
+)
+
+
+def print_fallback_notice(cause: str | None = None) -> None:
     """Announce, before the folder scan runs, that `--source auto` fell back to it.
 
-    Loud on purpose: a Music.app timeout, a denied automation permission, and a
-    genuinely empty lookback window all come back as the identical empty list
-    (`newest_albums_from_music`'s own never-raises contract draws no distinction
-    between them), so this notice cannot name which one happened, only that the
-    fallback fired, onto a source whose ranking is not to be trusted (see
-    album_scan.md, "Why the folder scan's date is a heuristic"). A silent fallback
-    would hide that. Before the scan rather than after a result: a fallback
-    that goes on to find nothing, or to find that `--library` is no directory, is
-    the same fallback, and an operator reading only "no album found" would diagnose
-    an empty library where a Music.app that never answered is the story.
+    Loud on purpose: the fallback lands on a source whose ranking is not to be
+    trusted (see album_scan.md, "Why the folder scan's date is a heuristic"), and a
+    silent fallback would hide that. `cause` is why Music.app answered nothing, as
+    `music_causes.newest_cause` read it off the recorded query (a timeout, a denied
+    automation permission, and an empty lookback window all reach here as the
+    identical empty list, so only that record tells them apart); None when nothing
+    was recorded, and the notice lists every possibility instead. Before the scan
+    rather than after a result: a fallback that goes on to find nothing, or to find
+    that `--library` is no directory, is the same fallback, and an operator reading
+    only "no album found" would diagnose an empty library where a Music.app that
+    never answered is the story.
     """
+    if cause is None:
+        cause = _FALLBACK_CAUSES_UNKNOWN
     print(
-        "album_scan: --source auto got nothing from Music.app (absent, not "
-        "running, not scriptable, denied automation permission, or nothing "
-        "added within the lookback window); falling back to the folder scan, "
-        "which ranks by each folder's birth time; that is not a reliable "
-        '"date added" (see album_scan.md, "Why the folder scan\'s date is a '
-        'heuristic")',
+        f"album_scan: --source auto found no album ({cause}); falling "
+        "back to the folder scan, which ranks by each folder's birth time; that is "
+        'not a reliable "date added" (see album_scan.md, "Why the folder scan\'s '
+        'date is a heuristic")',
         file=sys.stderr,
     )
 
@@ -134,6 +144,19 @@ def report_unreadable_tags(name: str) -> None:
     )
 
 
+def report_tag_over_cap(name: str) -> None:
+    """`folder_facts`' `on_over_cap`: the unreadable-tag line, naming the size cap.
+
+    A tag refused for its size is told apart from a corrupt one, so that a real tag
+    too large to read, rare as one is, is recognizable as that rather than as damage.
+    """
+    print(
+        f"album_scan: could not read the tags of {terminal_safe_text(name)} (the tag "
+        "is over the size cap); counted as an unrated track",
+        file=sys.stderr,
+    )
+
+
 def report_degradation(
     ref: AlbumRef,
     facts: AlbumFacts | None,
@@ -142,6 +165,7 @@ def report_degradation(
     source: str,
     no_favorites: bool,
     no_artwork: bool,
+    facts_cause: str | None = None,
 ) -> None:
     """One stderr line per fact that was asked for and not obtained, for this album.
 
@@ -154,11 +178,14 @@ def report_degradation(
     its tracks and year are known. The folder source reads the tracks and the year
     under `--no-favorites` too, so its null facts are reported either way; Music.app's
     are one query that `--no-favorites` skips, so declining it declines all three.
+    `facts_cause` is why a Music.app lookup gave no facts, when its query recorded
+    one (`music_causes.facts_cause`); None keeps the source's generic reason.
     """
     name = f"{terminal_safe_text(ref.artist)} - {terminal_safe_text(ref.album)}"
     if facts is None and (source == "folder" or not no_favorites):
+        reason = facts_cause or _NO_FACTS_REASON[source]
         print(
-            f"album_scan: counts unavailable for {name} ({_NO_FACTS_REASON[source]})",
+            f"album_scan: counts unavailable for {name} ({reason})",
             file=sys.stderr,
         )
     if facts is not None and facts.favorited is None and not no_favorites:
